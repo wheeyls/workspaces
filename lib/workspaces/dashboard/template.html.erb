@@ -1,0 +1,75 @@
+<main class="dashboard" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>">
+  <header class="dashboard__header">
+    <div><p class="eyebrow">Managed workspace</p><h1><%= @id %></h1><p><%= field('branch') %></p></div>
+    <a class="button button--subtle" href="/workspaces">All workspaces</a>
+  </header>
+  <section class="status-panel" aria-labelledby="status">
+    <div class="status-row">
+      <h2 id="status" role="status"><%= escape(@presentation['title']) %></h2>
+      <span id="activity" <%= 'hidden' unless @presentation['busy'] %>><span class="activity-dot" aria-hidden="true"></span> In progress · <span id="elapsed">—</span></span>
+    </div>
+    <p id="message"><%= field('message') %></p>
+    <ol class="stepper" id="progress" aria-label="Setup progress">
+      <% @presentation['steps'].each do |step| %>
+        <li class="step" data-step-state="<%= step['state'] %>" <%= 'aria-current="step"' if step['state'] == 'active' %>><span class="step-bullet" aria-hidden="true"></span><span><%= escape(step['label']) %></span><span class="step-outcome"><%= step['state'] %></span></li>
+      <% end %>
+    </ol>
+    <section class="error-panel setup-error" id="error-panel" role="alert" <%= 'hidden' unless @presentation['error'] %>>
+      <h3>What went wrong</h3><pre id="error"><%= escape(@presentation['error']) %></pre>
+    </section>
+    <div class="workspace-actions">
+      <a id="preview" class="button button--primary" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
+      <div id="actions" class="workspace-actions"><% @presentation['actions'].each do |action| %><%= action_form(action) %><% end %></div>
+    </div>
+    <p id="connection" role="status"></p>
+  </section>
+  <section class="log-panel"><div class="log-header"><h2>Live setup log</h2><time id="updated"><%= field('updated_at') %></time></div><pre id="log" tabindex="0" aria-label="Setup log"><%= field('log_tail') %></pre></section>
+  <section class="status-panel env-panel" aria-labelledby="environment-overrides">
+    <h2 id="environment-overrides">Environment overrides</h2>
+    <p class="muted">Set workspace-only environment overrides for this managed workspace. Saved values are write-only and never shown here. Remove an override to restore recipe defaults.</p>
+    <p class="muted">Protected runner settings are rejected by the backend and cannot be overridden here.</p>
+    <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" data-environment-form>
+      <fieldset class="env-fieldset" data-environment-fieldset>
+        <legend class="env-legend">Existing overrides</legend>
+        <% if environment_keys.empty? %>
+          <p class="muted">No workspace-specific overrides are currently saved.</p>
+        <% else %>
+          <ul class="env-existing-list">
+            <% environment_keys.each_with_index do |name, index| %>
+              <% key_id = "env-existing-#{index}" %>
+              <li class="env-existing-item" data-env-existing>
+                <div class="env-existing-name">
+                  <label for="<%= key_id %>-replace-value"><code><%= escape(name) %></code></label>
+                  <p class="muted">Saved value: <span aria-hidden="true">••••••••</span><span class="visually-hidden">Saved value masked</span></p>
+                </div>
+                <div class="env-existing-actions">
+                  <label class="env-inline-label" for="<%= key_id %>-replace-toggle">
+                    <input type="checkbox" id="<%= key_id %>-replace-toggle" data-replace-toggle aria-controls="<%= key_id %>-replace-value">
+                    Replace
+                  </label>
+                  <label class="env-inline-label" for="<%= key_id %>-remove">
+                    <input type="checkbox" id="<%= key_id %>-remove" name="remove[]" value="<%= escape(name) %>">
+                    Remove
+                  </label>
+                </div>
+                <label class="env-input-label" for="<%= key_id %>-replace-value">New value for <code><%= escape(name) %></code></label>
+                <input type="password" id="<%= key_id %>-replace-value" name="set[<%= escape(name) %>]" autocomplete="off" data-replace-value disabled>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+      </fieldset>
+      <fieldset class="env-fieldset" data-environment-additions>
+        <legend class="env-legend">Add variables</legend>
+        <div class="env-add-list" data-env-add-list></div>
+        <button type="button" class="button button--subtle" data-env-add-row>Add variable</button>
+      </fieldset>
+      <div class="env-actions">
+        <button class="button button--primary" data-env-submit>Save &amp; restart</button>
+      </div>
+      <p class="muted" id="environment-status" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+  <details class="status-panel"><summary>Workspace details</summary><dl><dt>Branch</dt><dd><%= field('branch') %></dd><dt>Path</dt><dd><code><%= field('path') %></code></dd><dt>Related PR</dt><dd><%= escape(@snapshot.dig('related_pr', 'number') || 'None') %></dd></dl></details>
+  <noscript><a href="/workspaces/<%= @id %>">Refresh status</a></noscript>
+</main>

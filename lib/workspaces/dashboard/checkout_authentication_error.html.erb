@@ -1,0 +1,22 @@
+<main class="dashboard">
+  <header class="dashboard__header"><h1>GitHub access needs setup</h1><a href="/workspaces">All workspaces</a></header>
+  <section class="error-panel" role="alert">
+    <h2>Checkout couldn't authenticate</h2>
+    <p>The server needs Git credentials to fetch this repository. GitHub CLI access alone may not configure Git.</p>
+  </section>
+  <section class="status-panel" aria-labelledby="fix-heading">
+    <h2 id="fix-heading">Fix on the server</h2>
+    <ol>
+      <li>Open a terminal in the app container, as the user running Workspaces.</li>
+      <li>Check GitHub CLI authentication: <code>gh auth status</code>. If needed, authenticate with <code>gh auth login</code>.</li>
+      <li>Connect Git to those credentials:</li>
+    </ol>
+    <pre><code>gh auth setup-git --hostname github.com</code></pre>
+    <p>For SSH remotes, configure a key authorized for the repository instead. Persist the credential setup in the container configuration.</p>
+    <% if @retry_path %>
+      <form method="post" action="<%= escape(@retry_path) %>"><button class="button button--primary">Retry checkout</button></form>
+    <% else %>
+      <a class="button button--primary" href="/workspaces">Back to workspace creation</a>
+    <% end %>
+  </section>
+</main>

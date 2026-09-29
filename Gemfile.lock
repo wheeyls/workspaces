@@ -1,0 +1,34 @@
+PATH
+  remote: .
+  specs:
+    workspaces (0.1.0)
+      puma (>= 6, < 8)
+      rack (~> 3.2)
+      rackup (~> 2.2)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    nio4r (2.7.5)
+    puma (6.4.2)
+      nio4r (~> 2.0)
+    rack (3.2.7)
+    rackup (2.3.1)
+      rack (>= 3)
+
+PLATFORMS
+  arm64-darwin-25
+  ruby
+
+DEPENDENCIES
+  workspaces!
+
+CHECKSUMS
+  nio4r (2.7.5)
+  puma (6.4.2)
+  rack (3.2.7)
+  rackup (2.3.1)
+  workspaces (0.1.0)
+
+BUNDLED WITH
+  4.0.3

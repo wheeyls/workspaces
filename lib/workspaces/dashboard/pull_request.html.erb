@@ -1,0 +1,37 @@
+<main class="dashboard">
+  <header class="dashboard__header">
+    <div><p class="eyebrow">PR preview</p><h1>PR #<%= escape(@number) %></h1></div>
+    <a href="/workspaces" class="button button--subtle">All workspaces</a>
+  </header>
+  <% unless @workspaces.empty? %>
+    <section class="status-panel" aria-labelledby="existing-heading">
+      <h2 id="existing-heading"><%= @workspaces.one? ? 'Continue in your workspace' : 'Choose a workspace' %></h2>
+      <p>Open an existing workspace to view its status, run it, or continue working.</p>
+      <% @workspaces.each do |workspace| %>
+        <article>
+          <h3><%= escape(workspace.fetch('id')) %></h3>
+          <p><%= escape(workspace['branch']) %></p>
+          <a href="/workspaces/<%= escape(workspace.fetch('id')) %>" class="button button--primary" aria-label="Open workspace <%= escape(workspace.fetch('id')) %>">Open workspace</a>
+        </article>
+      <% end %>
+    </section>
+  <% end %>
+  <% if @workspaces.empty? %>
+    <section class="status-panel" aria-labelledby="create-heading">
+      <h2 id="create-heading">Preview this pull request</h2>
+      <p>No workspaces yet for this PR.</p>
+  <% else %>
+    <details class="status-panel">
+      <summary>Create another workspace</summary>
+  <% end %>
+    <p>Create a fresh workspace from the PR's current head and start its server. Existing workspaces and edits stay untouched.</p>
+    <form method="post" action="/pr/<%= escape(@number) %>">
+      <button class="button <%= @workspaces.empty? ? 'button--primary' : 'button--subtle' %>">Create and start workspace</button>
+    </form>
+    <p class="muted">Creation fetches the PR. Repository setup steps continue on the workspace dashboard.</p>
+  <% if @workspaces.empty? %>
+    </section>
+  <% else %>
+    </details>
+  <% end %>
+</main>
