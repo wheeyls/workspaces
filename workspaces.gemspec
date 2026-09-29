@@ -5,8 +5,9 @@ Gem::Specification.new do |spec|
   spec.version = Workspaces::VERSION
   spec.summary = 'Managed Git worktrees and browser previews for development'
   spec.authors = ['G2 Engineering']
+  spec.license = 'MIT'
   spec.required_ruby_version = '>= 3.3'
-  spec.files = Dir['lib/**/*', 'exe/*', 'README.md', 'DESIGN.md']
+  spec.files = Dir['lib/**/*', 'exe/*', 'README.md', 'DESIGN.md', 'LICENSE']
   spec.bindir = 'exe'
   spec.executables = ['workspaces']
   spec.require_paths = ['lib']
