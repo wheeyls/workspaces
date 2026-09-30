@@ -47,6 +47,21 @@ RSpec.describe Workspaces::Coordinator do
 
   it 'reads only the selected log, bounds and scrubs backend output, and rejects unknown sources' do
     id = workspace.id
+    File.write(Workspaces::Config.setup_log_path(id), "setup only\n")
+    File.write(Workspaces::Config.backend_log_path(id), "ignored\n" * 120 + "token=private backend only\n")
+    coordinator = described_class.new
+
+    expect(coordinator.snapshot(id)).to include('log_source' => 'setup', 'log_tail' => "setup only\n")
+    tail = coordinator.snapshot(id, log: 'backend').fetch('log_tail')
+    expect(tail).to include('token=[FILTERED]', 'backend only')
+    expect(tail).not_to include('setup only', 'token=private')
+    expect(tail.lines.length).to be <= Workspaces::Config::SAFE_LOG_LINES
+    expect(coordinator.snapshot(id, include_log: false)['log_tail']).to eq('')
+    expect { coordinator.snapshot(id, log: 'wrong') }.to raise_error(ArgumentError, /Unknown workspace log/)
+  end
+
+  it 'reads only the selected log, bounds and scrubs backend output, and rejects unknown sources' do
+    id = workspace.id
     setup_path = Workspaces::Config.setup_log_path(id)
     backend_path = Workspaces::Config.backend_log_path(id)
     File.write(setup_path, "setup only\n")

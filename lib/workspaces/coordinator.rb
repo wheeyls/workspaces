@@ -35,6 +35,15 @@ module Workspaces
                  })
     end
 
+    def replace_editable_environment(id, text:)
+      restart = Backend.new(id).running?
+      launch(id, restart: restart, force: true,
+                 prelaunch: lambda { |_workspace|
+                   defaults = Recipe.new.default_editable_env
+                   EnvironmentOverrides.new(id).replace_editable(text, defaults: defaults)
+                 })
+    end
+
     def wait(id)
       workers_mutex.synchronize { workers[id] }&.value
       snapshot(id)
@@ -50,7 +59,6 @@ module Workspaces
       data = workspace.describe.merge(snapshot_fields(id, entry, busy, status, log, include_log))
       data.merge('presentation' => Presentation.new(data).to_h)
     end
-
 
     private
 
@@ -71,7 +79,8 @@ module Workspaces
         'operation' => entry['operation'], 'failed_phase' => failure_phase(entry, status),
         'steps' => entry.fetch('steps', []),
         'log_tail' => include_log ? log_tail(id, log) : '', 'log_source' => log, 'port' => entry['port'],
-        'environment_keys' => environment_keys(id)
+        'environment_keys' => environment_keys(id),
+        'editable_environment' => editable_environment(id)
       }
     end
 
@@ -190,6 +199,12 @@ module Workspaces
       EnvironmentOverrides.new(id).keys
     rescue EnvironmentOverrides::Invalid
       []
+    end
+
+    def editable_environment(id)
+      EnvironmentOverrides.new(id).editable_values(Recipe.new.default_editable_env)
+    rescue Recipe::Invalid, EnvironmentOverrides::Invalid
+      {}
     end
 
     def update(id, attributes)
