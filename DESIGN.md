@@ -50,6 +50,8 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 - **Open workspace**: success-styled link available when the server is ready
 - **Lifecycle controls**: disabled while busy; helper text distinguishes rebuilding from server-only restart
 - **Bounded log panel**: monospace text, fixed max height, manual-scroll-safe updates
+- **Log source switcher**: two native links inside one log panel, with current selection announced through `aria-current`; only the selected bounded log is loaded and refreshed. Setup is the default.
+- **Preview destination**: a small muted URL in Workspace details, visible before readiness; the primary Open workspace action remains reserved for ready servers.
 
 ## Accessibility constraints
 

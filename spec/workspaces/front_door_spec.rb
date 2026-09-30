@@ -21,6 +21,24 @@ RSpec.describe Workspaces::FrontDoor do
     expect(request("/workspaces/#{workspace.id}/status").first).to eq(200)
   end
 
+  it 'serves only the selected log source in page and status responses' do
+    id = workspace.id
+    File.write(Workspaces::Config.setup_log_path(id), "setup marker\n")
+    File.write(Workspaces::Config.backend_log_path(id), "backend marker\n")
+
+    status, _, page = request("/workspaces/#{id}?log=backend")
+    expect(status).to eq(200)
+    expect(page.join).to include('backend marker')
+    expect(page.join).not_to include('setup marker')
+
+    status, _, body = request("/workspaces/#{id}/status?log=backend")
+    expect(status).to eq(200)
+    data = JSON.parse(body.join)
+    expect(data).to include('log_source' => 'backend', 'log_tail' => "backend marker\n")
+    expect(data.to_json).not_to include('setup marker')
+    expect(request("/workspaces/#{id}/status?log=other").first).to eq(400)
+  end
+
   it 'protects all mutating actions from foreign origins and GETs' do
     allow(coordinator).to receive(:restart).and_return(true)
     path = "/workspaces/#{workspace.id}/restart"
@@ -62,7 +80,7 @@ RSpec.describe Workspaces::FrontDoor do
 
   it 'proxies warm workspace requests with canonical forwarding headers' do
     snapshot = workspace.describe.merge('status' => 'ready', 'active' => false)
-    allow(coordinator).to receive(:snapshot).with(workspace.id).and_return(snapshot)
+    allow(coordinator).to receive(:snapshot).with(workspace.id, include_log: false).and_return(snapshot)
     backend = instance_double(Workspaces::Backend, port: 30123)
     allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
     http = instance_double(Net::HTTP)
@@ -83,7 +101,7 @@ RSpec.describe Workspaces::FrontDoor do
 
   it 'preserves repeated set-cookie headers exactly as independent values' do
     snapshot = workspace.describe.merge('status' => 'ready', 'active' => false)
-    allow(coordinator).to receive(:snapshot).with(workspace.id).and_return(snapshot)
+    allow(coordinator).to receive(:snapshot).with(workspace.id, include_log: false).and_return(snapshot)
     backend = instance_double(Workspaces::Backend, port: 30123)
     allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
     response = instance_double(
@@ -110,7 +128,7 @@ RSpec.describe Workspaces::FrontDoor do
     ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.example.test',
                           'WORKSPACES_BASE_DOMAIN' => 'example.test') do
       snapshot = workspace.describe.merge('status' => 'ready', 'active' => false)
-      allow(coordinator).to receive(:snapshot).with(workspace.id).and_return(snapshot)
+    allow(coordinator).to receive(:snapshot).with(workspace.id, include_log: false).and_return(snapshot)
       backend = instance_double(Workspaces::Backend, port: 30123)
       allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
       response = instance_double(Net::HTTPResponse, code: '200', body: 'secure', each_header: {}.each)

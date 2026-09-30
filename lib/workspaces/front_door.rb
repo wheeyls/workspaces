@@ -85,7 +85,10 @@ module Workspaces
     def status_response(request, id, action)
       return response(405, 'Use GET or HEAD') unless safe?(request)
 
-      snapshot = @coordinator.snapshot(id)
+      source = request.params.fetch('log', 'setup')
+      return response(400, 'Unknown workspace log') unless %w(setup backend).include?(source)
+
+      snapshot = @coordinator.snapshot(id, log: source)
       body = action ? JSON.generate(snapshot) : DashboardView.render(snapshot)
       response(200, body, type: action ? 'application/json' : 'text/html', head: request.head?)
     end
@@ -177,7 +180,7 @@ module Workspaces
     def proxy(id, request)
       return response(404, 'Unknown managed workspace') unless Worktree.new(id).exists?
 
-      snapshot = @coordinator.snapshot(id)
+      snapshot = @coordinator.snapshot(id, include_log: false)
       return unavailable(id, request) unless snapshot['status'] == 'ready' && !snapshot['active']
 
       forward(id, request)

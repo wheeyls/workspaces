@@ -23,7 +23,14 @@
     </div>
     <p id="connection" role="status"></p>
   </section>
-  <section class="log-panel"><div class="log-header"><h2>Live setup log</h2><time id="updated"><%= field('updated_at') %></time></div><pre id="log" tabindex="0" aria-label="Setup log"><%= field('log_tail') %></pre></section>
+  <section class="log-panel" aria-labelledby="log-title">
+    <div class="log-header"><h2 id="log-title">Live <%= field('log_source') == 'backend' ? 'backend' : 'setup' %> log</h2><time id="updated"><%= field('updated_at') %></time></div>
+    <nav class="log-switch" aria-label="Log source">
+      <a href="?log=setup" data-log-source="setup" <%= 'aria-current="page"' if @snapshot['log_source'] != 'backend' %>>Setup log</a>
+      <a href="?log=backend" data-log-source="backend" <%= 'aria-current="page"' if @snapshot['log_source'] == 'backend' %>>Backend log</a>
+    </nav>
+    <pre id="log" tabindex="0" aria-label="<%= field('log_source') == 'backend' ? 'Backend' : 'Setup' %> log"><%= field('log_tail') %></pre>
+  </section>
   <section class="status-panel env-panel" aria-labelledby="environment-overrides">
     <h2 id="environment-overrides">Environment overrides</h2>
     <p class="muted">Set workspace-only environment overrides for this managed workspace. Saved values are write-only and never shown here. Remove an override to restore recipe defaults.</p>
@@ -70,6 +77,6 @@
       <p class="muted" id="environment-status" role="status" aria-live="polite"></p>
     </form>
   </section>
-  <details class="status-panel"><summary>Workspace details</summary><dl><dt>Branch</dt><dd><%= field('branch') %></dd><dt>Path</dt><dd><code><%= field('path') %></code></dd><dt>Related PR</dt><dd><%= escape(@snapshot.dig('related_pr', 'number') || 'None') %></dd></dl></details>
+  <details class="status-panel"><summary>Workspace details</summary><dl><dt>Preview URL</dt><dd><a class="detail-link" href="<%= escape(Config.preview_url(@id)) %>" target="_blank" rel="noopener noreferrer"><%= escape(Config.preview_url(@id)) %></a> <span class="muted">Available when ready</span></dd><dt>Branch</dt><dd><%= field('branch') %></dd><dt>Path</dt><dd><code><%= field('path') %></code></dd><dt>Related PR</dt><dd><%= escape(@snapshot.dig('related_pr', 'number') || 'None') %></dd></dl></details>
   <noscript><a href="/workspaces/<%= @id %>">Refresh status</a></noscript>
 </main>

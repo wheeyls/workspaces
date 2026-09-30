@@ -40,14 +40,17 @@ module Workspaces
       snapshot(id)
     end
 
-    def snapshot(id)
+    def snapshot(id, log: 'setup', include_log: true)
+      raise ArgumentError, 'Unknown workspace log' unless %w(setup backend).include?(log)
+
       workspace = @registry.find(id)
       entry = @state.get(id) || {}
       busy = locked?(id)
       status = resolve_status(id, entry.fetch('status', 'idle'), busy)
-      data = workspace.describe.merge(snapshot_fields(id, entry, busy, status))
+      data = workspace.describe.merge(snapshot_fields(id, entry, busy, status, log, include_log))
       data.merge('presentation' => Presentation.new(data).to_h)
     end
+
 
     private
 
@@ -59,7 +62,7 @@ module Workspaces
       status == 'ready' ? 'stopped' : status
     end
 
-    def snapshot_fields(id, entry, busy, status)
+    def snapshot_fields(id, entry, busy, status, log, include_log)
       {
         'workspace_id' => id, 'status' => status, 'active' => busy,
         'message' => status == entry['status'] ? entry['message'] : status.capitalize,
@@ -67,7 +70,7 @@ module Workspaces
         'completed_at' => entry['completed_at'], 'last_error' => entry['last_error'],
         'operation' => entry['operation'], 'failed_phase' => failure_phase(entry, status),
         'steps' => entry.fetch('steps', []),
-        'log_tail' => log_tail(id), 'port' => entry['port'],
+        'log_tail' => include_log ? log_tail(id, log) : '', 'log_source' => log, 'port' => entry['port'],
         'environment_keys' => environment_keys(id)
       }
     end
@@ -162,8 +165,8 @@ module Workspaces
       File.open(path, File::RDWR) { |lock| !lock.flock(File::LOCK_EX | File::LOCK_NB) }
     end
 
-    def log_tail(id)
-      path = Config.setup_log_path(id, create: false)
+    def log_tail(id, log)
+      path = log == 'backend' ? Config.backend_log_path(id, create: false) : Config.setup_log_path(id, create: false)
       return '' unless path.file?
 
       raw = File.open(path, 'rb') do |file|

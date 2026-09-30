@@ -45,6 +45,24 @@ RSpec.describe Workspaces::Coordinator do
     expect(snapshot.to_json).not_to include('secret-value')
   end
 
+  it 'reads only the selected log, bounds and scrubs backend output, and rejects unknown sources' do
+    id = workspace.id
+    setup_path = Workspaces::Config.setup_log_path(id)
+    backend_path = Workspaces::Config.backend_log_path(id)
+    File.write(setup_path, "setup only\n")
+    File.write(backend_path, "ignored\n" * 120 + "token=private backend only\n")
+    coordinator = described_class.new
+
+    expect(coordinator.snapshot(id)).to include('log_source' => 'setup', 'log_tail' => "setup only\n")
+    expect(coordinator.snapshot(id, log: 'backend')).to include('log_source' => 'backend')
+    tail = coordinator.snapshot(id, log: 'backend').fetch('log_tail')
+    expect(tail).to include('token=[FILTERED]', 'backend only')
+    expect(tail).not_to include('setup only', 'token=private')
+    expect(tail.lines.length).to be <= Workspaces::Config::SAFE_LOG_LINES
+    expect(coordinator.snapshot(id, include_log: false)['log_tail']).to eq('')
+    expect { coordinator.snapshot(id, log: 'wrong') }.to raise_error(ArgumentError, /Unknown workspace log/)
+  end
+
   it 'serializes preparation and commands against the same per-workspace lock' do
     registry = Workspaces::Registry.new
     registry.with_lock(workspace.id) do

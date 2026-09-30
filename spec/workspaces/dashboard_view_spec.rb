@@ -60,4 +60,23 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('No workspace-specific overrides are currently saved.')
     expect(html).to include('/workspaces/agent-123/environment')
   end
+
+  it 'shows the future preview destination and one selected log at a time' do
+    html = described_class.render(snapshot.merge('log_source' => 'backend', 'log_tail' => '<backend only>'))
+
+    expect(html).to include('Preview URL', 'http://ws-agent-123.localhost:4747/')
+    expect(html).to include('Available when ready', 'Live backend log', '&lt;backend only&gt;')
+    expect(html).to include('href="?log=backend" data-log-source="backend" aria-current="page"')
+    expect(html).not_to include('href="?log=setup" data-log-source="setup" aria-current="page"')
+    expect(html).to include("'/status?log=' + selectedLog")
+    expect(html).to include("busy || selectedLog === 'backend' ? 2000 : 10000")
+    expect(html.scan('id="log"').length).to eq(1)
+  end
+
+  it 'defaults to setup log when no source is supplied' do
+    html = described_class.render(snapshot)
+
+    expect(html).to include('Live setup log', 'href="?log=setup" data-log-source="setup" aria-current="page"')
+    expect(html).to include('aria-label="Setup log"')
+  end
 end
