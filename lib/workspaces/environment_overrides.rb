@@ -14,31 +14,69 @@ module Workspaces
     MAX_VALUE_BYTES = 8192
     MAX_BODY_BYTES = 128 * 1024
 
+    def self.validate_entries!(entries)
+      raise Invalid, 'Environment overrides must be a mapping' unless entries.is_a?(Hash)
+      raise Invalid, 'Environment overrides are limited to 100 entries' if entries.length > MAX_ENTRIES
+
+      entries.each_with_object({}) do |(name, value), normalized|
+        validate_name!(name)
+        validate_value!(value)
+        normalized[name] = value
+      end
+    end
+
+    def self.validate_name!(name)
+      unless name.is_a?(String) && name.match?(NAME_PATTERN)
+        raise Invalid, 'Environment names must match /^[A-Za-z_][A-Za-z0-9_]*$/'
+      end
+      return unless BLOCKED_NAMES.include?(name) || BLOCKED_PREFIXES.any? { |prefix| name.start_with?(prefix) }
+
+      raise Invalid, 'Environment name is reserved for the workspace runner'
+    end
+
+    def self.validate_value!(value)
+      raise Invalid, 'Environment values must be strings' unless value.is_a?(String)
+      raise Invalid, 'Environment values must not contain NUL bytes' if value.include?("\0")
+      raise Invalid, 'Environment values must be 8192 bytes or smaller' if value.bytesize > MAX_VALUE_BYTES
+    end
+
     def initialize(workspace_id, home: Config.home)
       @workspace_id = Config.validate_id!(workspace_id.to_s)
       @home = home
     end
 
     def load
-      reject_symlink!(directory_path)
-      reject_symlink!(file_path)
-      return {} unless file_path.exist?
-
-      parsed = JSON.parse(file_path.read)
-      raise Invalid, 'Stored environment overrides are invalid' unless parsed.is_a?(Hash)
-
-      validate_entries!(parsed)
-    rescue JSON::ParserError
-      raise Invalid, 'Stored environment overrides are invalid'
+      load_file(file_path).merge(load_file(editable_file_path))
     end
 
     def keys
       load.keys.sort
     end
 
+    def editable_values(defaults)
+      load_file(file_path)
+      defaults.merge(load_file(editable_file_path).reject { |name, _| sensitive_name?(name) })
+    end
+
+    def replace_editable(text, defaults:)
+      raise Invalid, 'Environment editor must contain text' unless text.is_a?(String)
+      raise Invalid, 'Environment update payload is too large' if text.bytesize > MAX_BODY_BYTES
+      self.class.validate_entries!(defaults)
+
+      entries = parse_lines(text)
+      self.class.validate_entries!(entries)
+
+      updated = entries.reject { |name, value| defaults[name] == value }
+      if updated.keys.any? { |name| sensitive_name?(name) }
+        raise Invalid, 'Secret-like environment names cannot be stored in the visible editor'
+      end
+      persist_editable(entries, updated, defaults)
+      load
+    end
+
     def apply_patch(set:, remove:)
       validate_patch!(set, remove)
-      updated = load.merge(set)
+      updated = load_file(file_path).merge(set)
       remove.each { |name| updated.delete(name) }
       validate_entries!(updated)
       persist(updated)
@@ -47,6 +85,7 @@ module Workspaces
 
     def clear!
       delete_file!
+      delete_file!(editable_file_path)
     end
 
     def scrub(value)
@@ -61,12 +100,56 @@ module Workspaces
 
     attr_reader :workspace_id, :home
 
+    def sensitive_name?(name)
+      name.match?(/(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL)/i)
+    end
+
+    def parse_lines(text)
+      entries = {}
+      text.each_line.with_index(1) do |line, number|
+        line = line.delete_suffix("\n").delete_suffix("\r")
+        next if line.strip.empty?
+
+        name, separator, value = line.partition('=')
+        raise Invalid, "Line #{number} must be NAME=value" if separator.empty? || name != name.strip
+        raise Invalid, "Line #{number} repeats #{name}" if entries.key?(name)
+        raise Invalid, "Line #{number}: values must not contain carriage returns" if value.include?("\r")
+
+        entries[name] = value
+      end
+      entries
+    end
+
+    def persist_editable(entries, updated, defaults)
+      legacy = load_file(file_path)
+      load_file(editable_file_path)
+      kept = legacy.reject { |name, _| defaults.key?(name) || entries.key?(name) }
+      validate_entries!(kept.merge(updated))
+      persist(kept)
+      persist(updated, path: editable_file_path)
+    end
+
     def directory_path
       home.join('environment')
     end
 
     def file_path
       directory_path.join("#{workspace_id}.json")
+    end
+
+    def editable_file_path
+      directory_path.join("#{workspace_id}.editable.json")
+    end
+
+    def load_file(path)
+      reject_symlink!(directory_path)
+      reject_symlink!(path)
+      return {} unless path.exist?
+
+      parsed = JSON.parse(path.read)
+      validate_entries!(parsed)
+    rescue JSON::ParserError
+      raise Invalid, 'Stored environment overrides are invalid'
     end
 
     def validate_patch!(set, remove)
@@ -95,45 +178,27 @@ module Workspaces
     end
 
     def validate_entries!(entries)
-      raise Invalid, 'Stored environment overrides are invalid' unless entries.is_a?(Hash)
-      raise Invalid, 'Environment overrides are limited to 100 entries' if entries.length > MAX_ENTRIES
-
-      entries.each_with_object({}) do |(name, value), normalized|
-        validate_name!(name)
-        validate_value!(value)
-        normalized[name] = value
-      end
+      self.class.validate_entries!(entries)
     end
 
     def validate_name!(name)
-      unless name.is_a?(String) && name.match?(NAME_PATTERN)
-        raise Invalid, 'Environment names must match /^[A-Za-z_][A-Za-z0-9_]*$/'
-      end
-      raise Invalid, 'Environment name is reserved for the workspace runner' if reserved_name?(name)
+      self.class.validate_name!(name)
     end
 
     def validate_value!(value)
-      raise Invalid, 'Environment values must be strings' unless value.is_a?(String)
-      raise Invalid, 'Environment values must not contain NUL bytes' if value.include?("\0")
-      return if value.bytesize <= MAX_VALUE_BYTES
-
-      raise Invalid, 'Environment values must be 8192 bytes or smaller'
+      self.class.validate_value!(value)
     end
 
-    def reserved_name?(name)
-      BLOCKED_NAMES.include?(name) || BLOCKED_PREFIXES.any? { |prefix| name.start_with?(prefix) }
-    end
-
-    def persist(entries)
+    def persist(entries, path: file_path)
       ensure_directory!
-      reject_symlink!(file_path)
-      return delete_file! if entries.empty?
+      reject_symlink!(path)
+      return delete_file!(path) if entries.empty?
 
       temp_path = directory_path.join(".#{workspace_id}.#{Process.pid}.#{SecureRandom.hex(6)}.tmp")
       begin
         write_temp_file(temp_path, entries)
-        File.rename(temp_path, file_path)
-        File.chmod(0o600, file_path)
+        File.rename(temp_path, path)
+        File.chmod(0o600, path)
       ensure
         File.unlink(temp_path) if temp_path.exist?
       end
@@ -147,11 +212,11 @@ module Workspaces
       end
     end
 
-    def delete_file!
-      return unless file_path.exist?
+    def delete_file!(path = file_path)
+      return unless path.exist? || path.symlink?
 
-      reject_symlink!(file_path)
-      File.unlink(file_path)
+      reject_symlink!(path)
+      File.unlink(path)
     end
 
     def ensure_directory!

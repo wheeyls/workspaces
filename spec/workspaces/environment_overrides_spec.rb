@@ -83,4 +83,42 @@ RSpec.describe Workspaces::EnvironmentOverrides do
     expect(store.load).to eq('APP_VARIANT' => 'first')
     expect(other.load).to eq('APP_VARIANT' => 'second')
   end
+
+  it 'replaces editable text, restores omitted defaults, and preserves legacy hidden overrides' do
+    defaults = { 'APP_VARIANT' => 'www', 'APP_CHANNEL' => 'www' }
+    store.apply_patch(set: { 'SECRET_TOKEN' => 'hidden', 'APP_VARIANT' => 'legacy' }, remove: [])
+    expect(store.editable_values(defaults)).to include('APP_VARIANT' => 'www')
+    store.replace_editable("APP_VARIANT=admin=preview\nAPP_CHANNEL=admin\n", defaults: defaults)
+    expect(store.editable_values(defaults)).to eq('APP_VARIANT' => 'admin=preview', 'APP_CHANNEL' => 'admin')
+    expect(store.load).to include('SECRET_TOKEN' => 'hidden')
+    store.replace_editable("APP_VARIANT=www\n", defaults: defaults)
+    expect(store.editable_values(defaults)).to eq(defaults)
+    expect(store.load).to include('SECRET_TOKEN' => 'hidden')
+  end
+
+  it 'rejects duplicate and unlisted names without replacing saved values' do
+    defaults = { 'APP_VARIANT' => 'www' }
+    store.replace_editable('APP_VARIANT=admin', defaults: defaults)
+    ['APP_VARIANT=one\nAPP_VARIANT=two', 'WORKSPACE_PORT=1234', 'SECRET_TOKEN=bad', 'BROKEN'].each do |text|
+      expect { store.replace_editable(text.gsub('\\n', "\n"), defaults: defaults) }
+        .to raise_error(described_class::Invalid)
+    end
+    expect(store.editable_values(defaults)).to eq('APP_VARIANT' => 'admin')
+  end
+
+  it 'permits additional non-reserved names and removes them when omitted' do
+    defaults = { 'APP_VARIANT' => 'www' }
+    store.replace_editable("APP_VARIANT=www\nNEW_FLAG=enabled", defaults: defaults)
+    expect(store.editable_values(defaults)).to include('NEW_FLAG' => 'enabled')
+    store.replace_editable('APP_VARIANT=www', defaults: defaults)
+    expect(store.editable_values(defaults)).to eq(defaults)
+  end
+
+  it 'keeps a previously saved non-editor override hidden when a new editor name is removed' do
+    defaults = { 'APP_VARIANT' => 'www' }
+    store.apply_patch(set: { 'SECRET_TOKEN' => 'hidden' }, remove: [])
+    store.replace_editable('APP_VARIANT=www', defaults: defaults)
+    expect(store.editable_values(defaults)).not_to have_key('SECRET_TOKEN')
+    expect(store.load).to include('SECRET_TOKEN' => 'hidden')
+  end
 end
