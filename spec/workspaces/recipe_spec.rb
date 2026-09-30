@@ -45,8 +45,31 @@ RSpec.describe Workspaces::Recipe do
     expect(result['WORKSPACE_PORT']).to eq('30123')
   end
 
+  it 'loads editable defaults and permits workspace overrides' do
+    configure(steps, 'default_editable_env' => { 'APP_VARIANT' => 'www' })
+    recipe = described_class.new
+
+    expect(recipe.default_editable_env).to eq('APP_VARIANT' => 'www')
+    expect(recipe.env(recipe.steps.first, {})).to include('APP_VARIANT' => 'www')
+    expect(recipe.env(recipe.steps.first, {}, overrides: { 'APP_VARIANT' => 'admin' })).to include('APP_VARIANT' => 'admin')
+  end
+
+  it 'rejects duplicate recipe definitions for editable names' do
+    configure(steps, 'default_editable_env' => { 'APP_VARIANT' => 'www' }, 'env' => { 'APP_VARIANT' => 'admin' })
+    expect { described_class.new }.to raise_error(described_class::Invalid, /cannot also appear/)
+  end
+
+  it 'rejects malformed editable defaults' do
+    [[], { 'WORKSPACE_PORT' => '1' }, { 'APP_VARIANT' => nil }, { '1BAD' => 'x' },
+     { 'SECRET_TOKEN' => 'bad' },
+     { 'APP_VARIANT' => "multiple\nlines" }].each do |invalid|
+      configure(steps, 'default_editable_env' => invalid)
+      expect { described_class.new }.to raise_error(described_class::Invalid)
+    end
+  end
+
   it 'rejects malformed commands, duplicate IDs, unknown settings and overwritten context' do
-    [steps + [steps.first], steps.take(2), steps.map { |step| step.reject { |key, _| key == 'run' } }].each do |invalid|
+    [steps + [steps.first], steps.take(2), steps.map { |step| step.except('run') }].each do |invalid|
       configure(invalid)
       expect { described_class.new }.to raise_error(described_class::Invalid)
     end

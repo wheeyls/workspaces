@@ -1,19 +1,22 @@
 require 'yaml'
 require_relative 'config'
+require_relative 'environment_overrides'
 
 module Workspaces
   class Recipe
     class Invalid < ArgumentError; end
     RESERVED_ENV = %w(WORKSPACE_ID WORKSPACE_PATH WORKSPACE_REPO_ROOT WORKSPACE_PORT WORKSPACE_URL
                       WORKSPACE_HOST WORKSPACE_CACHE_DIR WORKSPACE_RUN_ID).freeze
-    attr_reader :steps, :environment
+    attr_reader :steps, :environment, :default_editable_env
 
     def initialize(root: Config.repo_root)
       @root = root
       document = YAML.safe_load(root.join('.workspaces.yml').read, aliases: false)
       validate_document!(document)
+      @default_editable_env = validate_editable_env!(document.fetch('default_editable_env', {}))
       @environment = validate_env!(document.fetch('env', {}))
       @steps = document.fetch('steps').map { |step| validate_step!(step) }
+      validate_editable_overlap!
       validate_sequence!
     rescue Errno::ENOENT
       raise Invalid, 'Add .workspaces.yml to the source repository before starting a workspace'
@@ -33,7 +36,7 @@ module Workspaces
     end
 
     def env(step, context, overrides: {})
-      expanded = environment.merge(step.fetch('env', {})).transform_values do |value|
+      expanded = environment.merge(step.fetch('env', {})).merge(default_editable_env).transform_values do |value|
         value.nil? ? nil : expand(value, context)
       end
       expanded.merge(overrides).merge(context)
@@ -46,7 +49,7 @@ module Workspaces
         raise Invalid,
               'Configuration must be a mapping with version: 1'
       end
-      unknown_keys!(document, %w(version env steps))
+      unknown_keys!(document, %w(version env default_editable_env steps))
       raise Invalid, 'steps must be a nonempty array' unless document['steps'].is_a?(Array) && !document['steps'].empty?
     end
 
@@ -104,6 +107,29 @@ module Workspaces
         raise Invalid, 'Environment values must be strings or null' unless value.nil? || value.is_a?(String)
       end
       values
+    end
+
+    def validate_editable_env!(values)
+      raise Invalid, 'default_editable_env must be a mapping' unless values.is_a?(Hash)
+
+      EnvironmentOverrides.validate_entries!(values)
+      values.each do |key, value|
+        raise Invalid, "#{key} is supplied by the workspace runner" if RESERVED_ENV.include?(key)
+        if key.match?(/(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL)/i)
+          raise Invalid, 'Secret-like names cannot be declared in default_editable_env'
+        end
+        raise Invalid, 'Editable environment values must be single-line strings' if value.match?(/[\r\n]/)
+      end
+      values
+    rescue EnvironmentOverrides::Invalid => e
+      raise Invalid, e.message
+    end
+
+    def validate_editable_overlap!
+      names = default_editable_env.keys
+      return unless environment.keys.intersect?(names) || steps.any? { |step| step['env'].keys.intersect?(names) }
+
+      raise Invalid, 'default_editable_env names cannot also appear in env or step env'
     end
 
     def validate_env_name!(key)
