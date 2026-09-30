@@ -106,7 +106,12 @@ module Workspaces
       return response(405, 'Use POST') unless request.post?
       return response(403, 'Actions require the configured dashboard origin') unless same_origin?(request)
 
-      updated = @coordinator.update_environment(id, **parse_environment_changes(request))
+      params = environment_params(request)
+      updated = if params.key?('editable_env')
+                  @coordinator.replace_editable_environment(id, text: parse_editable_environment(params))
+                else
+                  @coordinator.update_environment(id, **parse_environment_changes(params))
+                end
       return response(409, 'Workspace is busy preparing, restarting, or running a command') unless updated
 
       redirect(Config.dashboard_url(id))
@@ -132,11 +137,24 @@ module Workspaces
       redirect(Config.dashboard_url(workspace.id))
     end
 
-    def parse_environment_changes(request)
+    def environment_params(request)
       validate_environment_content_type!(request)
       raw = environment_body(request)
-      params = Rack::Utils.parse_nested_query(raw)
+      Rack::Utils.parse_nested_query(raw)
+    rescue Rack::Utils::ParameterTypeError => e
+      raise EnvironmentOverrides::Invalid, "Invalid environment form: #{e.class}"
+    end
+
+    def parse_environment_changes(params)
       { set: normalize_set(params['set']), remove: normalize_remove(params['remove']) }
+    end
+
+    def parse_editable_environment(params)
+      unless params['editable_env'].is_a?(String)
+        raise EnvironmentOverrides::Invalid, 'Environment editor requires one editable_env field'
+      end
+
+      params.fetch('editable_env')
     end
 
     def validate_environment_content_type!(request)

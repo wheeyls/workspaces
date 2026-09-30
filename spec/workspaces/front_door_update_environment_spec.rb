@@ -128,6 +128,43 @@ RSpec.describe Workspaces::FrontDoor, '#update_environment' do
     expect(Workspaces::EnvironmentOverrides.new(workspace.id).load).to eq({})
   end
 
+  it 'saves the editable text and restores defaults when lines are removed' do
+    install_recipe_with_overrides
+    recipe = environment_recipe
+    recipe['default_editable_env'] = recipe.delete('env')
+    recipe['steps'].first.delete('env')
+    Workspaces::Config.repo_root.join('.workspaces.yml').write(YAML.dump(recipe))
+    path = "/workspaces/#{workspace.id}/environment"
+    origin = { 'HTTP_ORIGIN' => 'http://localhost:4747' }
+
+    input = "APP_VARIANT=admin\nAPP_CHANNEL=admin\nEXTRA_FLAG=on\n"
+    status, = request(path, headers: origin, form: Rack::Utils.build_nested_query('editable_env' => input))
+    expect(status).to eq(303)
+    expect(coordinator.wait(workspace.id)['editable_environment']).to eq(
+      'APP_VARIANT' => 'admin', 'APP_CHANNEL' => 'admin', 'EXTRA_FLAG' => 'on'
+    )
+
+    reset_form = Rack::Utils.build_nested_query('editable_env' => 'APP_VARIANT=global-default')
+    status, = request(path, headers: origin, form: reset_form)
+    expect(status).to eq(303)
+    expect(coordinator.wait(workspace.id)['editable_environment']).to eq(
+      'APP_VARIANT' => 'global-default', 'APP_CHANNEL' => 'routing-default'
+    )
+  end
+
+  it 'rejects malformed editable text and leaves the workspace untouched' do
+    install_recipe_with_overrides
+    recipe = environment_recipe
+    recipe['default_editable_env'] = recipe.delete('env')
+    recipe['steps'].first.delete('env')
+    Workspaces::Config.repo_root.join('.workspaces.yml').write(YAML.dump(recipe))
+    status, = request("/workspaces/#{workspace.id}/environment",
+                      headers: { 'HTTP_ORIGIN' => 'http://localhost:4747' },
+                      form: Rack::Utils.build_nested_query('editable_env' => 'WORKSPACE_PORT=1234'))
+    expect(status).to eq(422)
+    expect(Workspaces::EnvironmentOverrides.new(workspace.id).load).to eq({})
+  end
+
   def install_recipe_with_overrides
     %w(server.rb ready.rb).each do |file|
       FileUtils.cp(File.join(__dir__, 'fixtures', file), Workspaces::Config.repo_root.join(file))
