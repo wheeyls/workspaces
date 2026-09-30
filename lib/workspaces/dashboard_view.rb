@@ -87,6 +87,13 @@ module Workspaces
       keys.map(&:to_s).sort
     end
 
+    def editable_environment_text
+      values = @snapshot['editable_environment']
+      return '' unless values.is_a?(Hash)
+
+      values.sort.map { |name, value| "#{name}=#{value}" }.join("\n")
+    end
+
     def action_form(action)
       style = action['primary'] ? 'button--primary' : 'button--subtle'
       "<form method=\"post\" action=\"/workspaces/#{@id}/#{action.fetch('key')}\">" \

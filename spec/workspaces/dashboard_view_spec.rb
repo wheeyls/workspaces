@@ -40,24 +40,19 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).not_to include('Dependencies &amp; database', 'Build assets')
   end
 
-  it 'renders environment overrides as write-only controls without exposing values' do
-    html = described_class.render(snapshot.merge('environment_keys' => %w(APP_VARIANT APP_CHANNEL),
-                                                 'environment_overrides' => {
-                                                   'APP_VARIANT' => 'admin',
-                                                   'APP_CHANNEL' => 'admin'
-                                                 }))
+  it 'renders editable values as escaped line-based settings without exposing hidden overrides' do
+    html = described_class.render(snapshot.merge('environment_keys' => %w(APP_VARIANT SECRET_TOKEN),
+                                                 'editable_environment' => { 'APP_VARIANT' => '<admin>' }))
 
-    expect(html).to include('Environment overrides', '/workspaces/agent-123/environment')
-    expect(html).to include('set[APP_VARIANT]', 'set[APP_CHANNEL]', 'remove[]" value="APP_VARIANT"')
-    expect(html).to include('Saved value: <span aria-hidden="true">••••••••</span>')
-    expect(html).to include('Protected runner settings are rejected by the backend')
-    expect(html).not_to include('value="admin"')
+    expect(html).to include('Editable environment', '/workspaces/agent-123/environment')
+    expect(html).to include('name="editable_env"', 'APP_VARIANT=&lt;admin&gt;')
+    expect(html).not_to include('SECRET_TOKEN=')
   end
 
   it 'supports snapshots without environment keys for older fixtures' do
     html = described_class.render(snapshot.merge('environment_keys' => nil))
 
-    expect(html).to include('No workspace-specific overrides are currently saved.')
+    expect(html).to include('name="editable_env"')
     expect(html).to include('/workspaces/agent-123/environment')
   end
 

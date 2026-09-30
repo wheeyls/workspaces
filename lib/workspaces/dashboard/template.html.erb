@@ -32,44 +32,15 @@
     <pre id="log" tabindex="0" aria-label="<%= field('log_source') == 'backend' ? 'Backend' : 'Setup' %> log"><%= field('log_tail') %></pre>
   </section>
   <section class="status-panel env-panel" aria-labelledby="environment-overrides">
-    <h2 id="environment-overrides">Environment overrides</h2>
-    <p class="muted">Set workspace-only environment overrides for this managed workspace. Saved values are write-only and never shown here. Remove an override to restore recipe defaults.</p>
-    <p class="muted">Protected runner settings are rejected by the backend and cannot be overridden here.</p>
+    <h2 id="environment-overrides">Editable environment</h2>
+    <p class="muted">One NAME=value per line. These non-secret settings start from <code>default_editable_env</code> in the trusted recipe. Edit values to customize this workspace; remove a line to restore its default.</p>
+    <p class="muted">Do not enter secrets: editor values appear in the dashboard and status API. Add other non-secret names as needed. Previously saved values outside the editor remain hidden and unchanged.</p>
     <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" data-environment-form>
       <fieldset class="env-fieldset" data-environment-fieldset>
-        <legend class="env-legend">Existing overrides</legend>
-        <% if environment_keys.empty? %>
-          <p class="muted">No workspace-specific overrides are currently saved.</p>
-        <% else %>
-          <ul class="env-existing-list">
-            <% environment_keys.each_with_index do |name, index| %>
-              <% key_id = "env-existing-#{index}" %>
-              <li class="env-existing-item" data-env-existing>
-                <div class="env-existing-name">
-                  <label for="<%= key_id %>-replace-value"><code><%= escape(name) %></code></label>
-                  <p class="muted">Saved value: <span aria-hidden="true">••••••••</span><span class="visually-hidden">Saved value masked</span></p>
-                </div>
-                <div class="env-existing-actions">
-                  <label class="env-inline-label" for="<%= key_id %>-replace-toggle">
-                    <input type="checkbox" id="<%= key_id %>-replace-toggle" data-replace-toggle aria-controls="<%= key_id %>-replace-value">
-                    Replace
-                  </label>
-                  <label class="env-inline-label" for="<%= key_id %>-remove">
-                    <input type="checkbox" id="<%= key_id %>-remove" name="remove[]" value="<%= escape(name) %>">
-                    Remove
-                  </label>
-                </div>
-                <label class="env-input-label" for="<%= key_id %>-replace-value">New value for <code><%= escape(name) %></code></label>
-                <input type="password" id="<%= key_id %>-replace-value" name="set[<%= escape(name) %>]" autocomplete="off" data-replace-value disabled>
-              </li>
-            <% end %>
-          </ul>
-        <% end %>
-      </fieldset>
-      <fieldset class="env-fieldset" data-environment-additions>
-        <legend class="env-legend">Add variables</legend>
-        <div class="env-add-list" data-env-add-list></div>
-        <button type="button" class="button button--subtle" data-env-add-row>Add variable</button>
+        <legend class="env-legend">Workspace settings</legend>
+        <label class="env-input-label" for="editable-env">Environment variables</label>
+        <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="editable-env-help"><%= escape(editable_environment_text) %></textarea>
+        <p class="muted" id="editable-env-help">Values may contain =. Blank lines are ignored. Names are case-sensitive and cannot repeat.</p>
       </fieldset>
       <div class="env-actions">
         <button class="button button--primary" data-env-submit>Save &amp; restart</button>
