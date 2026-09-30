@@ -3,40 +3,15 @@ require_relative 'spec_helper'
 RSpec.describe Workspaces::DashboardView, '.render' do
   before { repository }
 
-  let(:workspace) { Workspaces::Registry.new.create(branch: 'main') }
+  it 'renders a labelled multiline editor and disables saving while busy' do
+    snapshot = { 'workspace_id' => 'fixture', 'status' => 'preparing', 'active' => true,
+                 'editable_environment' => { 'APP_VARIANT' => 'www', 'APP_CHANNEL' => 'www' } }
+    html = described_class.render(snapshot)
 
-  def render_dashboard_html(snapshot_overrides = {})
-    base = workspace.describe.merge('workspace_id' => workspace.id,
-                                    'status' => 'ready',
-                                    'active' => false,
-                                    'message' => 'Workspace ready',
-                                    'environment_keys' => ['APP_VARIANT'])
-    described_class.render(base.merge(snapshot_overrides))
-  end
-
-  it 'keeps replace inputs disabled until explicitly enabled and adds safe variable rows' do
-    html = render_dashboard_html
-
-    expect(html).to include('data-replace-toggle')
-    expect(html).to include('data-replace-value disabled')
-    expect(html).to include('data-env-add-row')
-    expect(html).to include('namePattern = /^[A-Za-z_][A-Za-z0-9_]*$/')
-    expect(html).to include("hidden.name = 'set[' + key + ']';")
-  end
-
-  it 'clears and omits unchanged replace values and incomplete add rows before submit' do
-    html = render_dashboard_html
-
-    expect(html).to include('function prepareSubmit()')
-    expect(html).to include("if (!toggle.checked) row.querySelector('[data-replace-value]').value = ''")
-    expect(html).to include('if (key && namePattern.test(key))')
-  end
-
-  it 'disables environment submit controls while busy without removing field values in DOM' do
-    html = render_dashboard_html('active' => true, 'status' => 'preparing')
-
-    expect(html).to include('function toggleBusyState(nextBusy)')
-    expect(html).to include("'fieldset, [data-env-submit], [data-env-add-row]'")
+    expect(html).to include('<textarea id="editable-env" name="editable_env"')
+    expect(html).to include('APP_CHANNEL=www', 'APP_VARIANT=www')
+    expect(html).to include("'fieldset, [data-env-submit]'")
     expect(html).to include('Workspace is busy. Environment updates are temporarily disabled.')
+    expect(html).not_to include('data-env-add-row', 'data-replace-toggle')
   end
 end

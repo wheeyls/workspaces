@@ -26,6 +26,7 @@
 [hidden] { display: none !important; }
 input { max-width: 100%; padding: var(--space-2); color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--space-1); }
 input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 summary { cursor: pointer; color: var(--muted); }
 summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .workspace-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-block-start: var(--space-4); }
@@ -225,38 +226,6 @@ h1 {
   padding-inline: var(--space-2);
 }
 
-.env-existing-list,
-.env-add-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--space-4);
-}
-
-.env-existing-item,
-.env-add-item {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: var(--space-3);
-  background: color-mix(in oklab, var(--bg) 65%, transparent);
-  display: grid;
-  gap: var(--space-3);
-}
-
-.env-existing-name,
-.env-add-grid {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.env-existing-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-}
-
-.env-inline-label,
 .env-input-label {
   display: inline-flex;
   align-items: center;
@@ -269,22 +238,20 @@ h1 {
   margin-block-end: var(--space-1);
 }
 
-.env-add-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
-}
-
-.env-add-grid p {
-  margin: 0;
-}
-
-.env-row-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.button--icon {
-  min-inline-size: 2.25rem;
-  padding-inline: var(--space-2);
+.env-fieldset textarea {
+  display: block;
+  inline-size: 100%;
+  min-block-size: 12rem;
+  resize: vertical;
+  padding: var(--space-3);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--space-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
 }
 
 .env-actions {

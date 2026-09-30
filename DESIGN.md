@@ -52,6 +52,7 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 - **Bounded log panel**: monospace text, fixed max height, manual-scroll-safe updates
 - **Log source switcher**: two native links inside one log panel, with current selection announced through `aria-current`; only the selected bounded log is loaded and refreshed. Setup is the default.
 - **Preview destination**: a small muted URL in Workspace details, visible before readiness; the primary Open workspace action remains reserved for ready servers.
+- **Editable environment**: labelled monospace multiline `NAME=value` control for non-secret recipe defaults and added workspace settings; busy state disables the fieldset and save button, values are escaped in HTML, other legacy overrides remain hidden. Omitted default names revert to recipe defaults; omitted added names are unset.
 
 ## Accessibility constraints
 
