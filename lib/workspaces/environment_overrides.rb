@@ -54,8 +54,9 @@ module Workspaces
     end
 
     def editable_values(defaults)
-      load_file(file_path)
-      defaults.merge(load_file(editable_file_path).reject { |name, _| sensitive_name?(name) })
+      legacy = load_file(file_path).slice(*defaults.keys)
+      editable = load_file(editable_file_path).reject { |name, _| sensitive_name?(name) }
+      defaults.merge(legacy).merge(editable)
     end
 
     def replace_editable(text, defaults:)

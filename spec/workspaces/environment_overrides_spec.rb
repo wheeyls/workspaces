@@ -87,7 +87,7 @@ RSpec.describe Workspaces::EnvironmentOverrides do
   it 'replaces editable text, restores omitted defaults, and preserves legacy hidden overrides' do
     defaults = { 'APP_VARIANT' => 'www', 'APP_CHANNEL' => 'www' }
     store.apply_patch(set: { 'SECRET_TOKEN' => 'hidden', 'APP_VARIANT' => 'legacy' }, remove: [])
-    expect(store.editable_values(defaults)).to include('APP_VARIANT' => 'www')
+    expect(store.editable_values(defaults)).to eq('APP_VARIANT' => 'legacy', 'APP_CHANNEL' => 'www')
     store.replace_editable("APP_VARIANT=admin=preview\nAPP_CHANNEL=admin\n", defaults: defaults)
     expect(store.editable_values(defaults)).to eq('APP_VARIANT' => 'admin=preview', 'APP_CHANNEL' => 'admin')
     expect(store.load).to include('SECRET_TOKEN' => 'hidden')
@@ -120,5 +120,15 @@ RSpec.describe Workspaces::EnvironmentOverrides do
     store.replace_editable('APP_VARIANT=www', defaults: defaults)
     expect(store.editable_values(defaults)).not_to have_key('SECRET_TOKEN')
     expect(store.load).to include('SECRET_TOKEN' => 'hidden')
+  end
+
+  it 'shows an editable override over an older value for the same default name' do
+    defaults = { 'APP_VARIANT' => 'www' }
+    store.apply_patch(set: { 'APP_VARIANT' => 'legacy' }, remove: [])
+    path = Workspaces::Config.home.join('environment', "#{workspace.id}.editable.json")
+    path.write(JSON.generate('APP_VARIANT' => 'preview'))
+
+    expect(store.editable_values(defaults)).to eq('APP_VARIANT' => 'preview')
+    expect(store.load).to eq('APP_VARIANT' => 'preview')
   end
 end
