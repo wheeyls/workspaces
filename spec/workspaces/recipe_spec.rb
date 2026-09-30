@@ -33,15 +33,15 @@ RSpec.describe Workspaces::Recipe do
   end
 
   it 'applies runtime environment overrides after recipe env while preserving runner context' do
-    configure(steps, 'env' => { 'UE_APP' => 'global-default', 'ROUTING_SUBDOMAIN' => 'routing-default' })
+    configure(steps, 'env' => { 'APP_VARIANT' => 'global-default', 'APP_CHANNEL' => 'routing-default' })
     recipe = described_class.new
     context = { 'WORKSPACE_PORT' => '30123', 'WORKSPACE_URL' => 'https://ws-example.test' }
 
     result = recipe.env(recipe.steps.first, context,
-                        overrides: { 'UE_APP' => 'override', 'ROUTING_SUBDOMAIN' => 'preview',
+                        overrides: { 'APP_VARIANT' => 'override', 'APP_CHANNEL' => 'preview',
                                      'CUSTOM_APP' => 'value' })
 
-    expect(result).to include('UE_APP' => 'override', 'ROUTING_SUBDOMAIN' => 'preview', 'CUSTOM_APP' => 'value')
+    expect(result).to include('APP_VARIANT' => 'override', 'APP_CHANNEL' => 'preview', 'CUSTOM_APP' => 'value')
     expect(result['WORKSPACE_PORT']).to eq('30123')
   end
 

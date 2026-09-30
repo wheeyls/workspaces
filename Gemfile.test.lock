@@ -2,7 +2,7 @@ PATH
   remote: .
   specs:
     workspaces (0.1.0)
-      puma (>= 6, < 8)
+      puma (>= 6, < 9)
       rack (~> 3.2)
       rackup (~> 2.2)
 

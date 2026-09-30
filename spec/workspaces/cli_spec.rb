@@ -33,8 +33,8 @@ RSpec.describe Workspaces::Cli do
   end
 
   it 'keeps the default HTTP listener even when the public origin is HTTPS' do
-    ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.coolify.tools.g2.com',
-                          'WORKSPACES_BASE_DOMAIN' => 'coolify.tools.g2.com') do
+      ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.example.test',
+                            'WORKSPACES_BASE_DOMAIN' => 'example.test') do
       allow(Rackup::Handler::Puma).to receive(:run) do |_, **options|
         expect(options[:Host]).to eq('127.0.0.1')
         expect(options[:Port]).to eq(4747)

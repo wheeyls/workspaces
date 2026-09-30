@@ -10,7 +10,7 @@ RSpec.describe Workspaces::DashboardView, '.render' do
                                     'status' => 'ready',
                                     'active' => false,
                                     'message' => 'Workspace ready',
-                                    'environment_keys' => ['UE_APP'])
+                                    'environment_keys' => ['APP_VARIANT'])
     described_class.render(base.merge(snapshot_overrides))
   end
 

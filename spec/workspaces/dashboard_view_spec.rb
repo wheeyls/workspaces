@@ -41,14 +41,14 @@ RSpec.describe Workspaces::DashboardView do
   end
 
   it 'renders environment overrides as write-only controls without exposing values' do
-    html = described_class.render(snapshot.merge('environment_keys' => %w(UE_APP ROUTING_SUBDOMAIN),
+    html = described_class.render(snapshot.merge('environment_keys' => %w(APP_VARIANT APP_CHANNEL),
                                                  'environment_overrides' => {
-                                                   'UE_APP' => 'admin',
-                                                   'ROUTING_SUBDOMAIN' => 'admin'
+                                                   'APP_VARIANT' => 'admin',
+                                                   'APP_CHANNEL' => 'admin'
                                                  }))
 
     expect(html).to include('Environment overrides', '/workspaces/agent-123/environment')
-    expect(html).to include('set[UE_APP]', 'set[ROUTING_SUBDOMAIN]', 'remove[]" value="UE_APP"')
+    expect(html).to include('set[APP_VARIANT]', 'set[APP_CHANNEL]', 'remove[]" value="APP_VARIANT"')
     expect(html).to include('Saved value: <span aria-hidden="true">••••••••</span>')
     expect(html).to include('Protected runner settings are rejected by the backend')
     expect(html).not_to include('value="admin"')

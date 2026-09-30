@@ -4,7 +4,7 @@ Gem::Specification.new do |spec|
   spec.name = 'workspaces'
   spec.version = Workspaces::VERSION
   spec.summary = 'Managed Git worktrees and browser previews for development'
-  spec.authors = ['G2 Engineering']
+  spec.authors = ['Workspaces contributors']
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 3.3'
   spec.files = Dir['lib/**/*', 'exe/*', 'README.md', 'DESIGN.md', 'LICENSE']
@@ -14,5 +14,5 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency 'rack', '~> 3.2'
   spec.add_dependency 'rackup', '~> 2.2'
-  spec.add_dependency 'puma', '>= 6', '< 8'
+  spec.add_dependency 'puma', '>= 6', '< 9'
 end

@@ -32,16 +32,16 @@ RSpec.describe Workspaces::FrontDoor do
   end
 
   it 'supports hosted workspace IDs under a one-label wildcard and rejects forwarded-host bypasses' do
-    ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.coolify.tools.g2.com',
-                          'WORKSPACES_BASE_DOMAIN' => 'coolify.tools.g2.com') do
-      host = "ws-#{workspace.id}.coolify.tools.g2.com"
+      ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.example.test',
+                            'WORKSPACES_BASE_DOMAIN' => 'example.test') do
+        host = "ws-#{workspace.id}.example.test"
       expect(Workspaces::Config.preview_url(workspace.id)).to eq("https://#{host}/")
       status, headers, = request('/', host: host)
       expect(status).to eq(303)
-      expect(headers['location']).to eq("https://previews.coolify.tools.g2.com/workspaces/#{workspace.id}")
-      forged_headers = { 'HTTP_X_FORWARDED_HOST' => 'previews.coolify.tools.g2.com' }
+        expect(headers['location']).to eq("https://previews.example.test/workspaces/#{workspace.id}")
+        forged_headers = { 'HTTP_X_FORWARDED_HOST' => 'previews.example.test' }
       expect(request('/workspaces', host: 'evil.test', headers: forged_headers).first).to eq(400)
-      expect(request('/workspaces', host: 'previews.coolify.tools.g2.com').first).to eq(200)
+        expect(request('/workspaces', host: 'previews.example.test').first).to eq(200)
     end
   end
 
@@ -107,8 +107,8 @@ RSpec.describe Workspaces::FrontDoor do
   end
 
   it 'forwards https public-origin metadata for hosted previews' do
-    ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.coolify.tools.g2.com',
-                          'WORKSPACES_BASE_DOMAIN' => 'coolify.tools.g2.com') do
+    ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.example.test',
+                          'WORKSPACES_BASE_DOMAIN' => 'example.test') do
       snapshot = workspace.describe.merge('status' => 'ready', 'active' => false)
       allow(coordinator).to receive(:snapshot).with(workspace.id).and_return(snapshot)
       backend = instance_double(Workspaces::Backend, port: 30123)

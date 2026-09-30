@@ -37,11 +37,11 @@ RSpec.describe Workspaces::Coordinator do
   end
 
   it 'reports saved environment key names without exposing values in snapshots' do
-    Workspaces::EnvironmentOverrides.new(workspace.id).apply_patch(set: { 'UE_APP' => 'secret-value' }, remove: [])
+    Workspaces::EnvironmentOverrides.new(workspace.id).apply_patch(set: { 'APP_VARIANT' => 'secret-value' }, remove: [])
 
     snapshot = described_class.new.snapshot(workspace.id)
 
-    expect(snapshot['environment_keys']).to eq(['UE_APP'])
+    expect(snapshot['environment_keys']).to eq(['APP_VARIANT'])
     expect(snapshot.to_json).not_to include('secret-value')
   end
 

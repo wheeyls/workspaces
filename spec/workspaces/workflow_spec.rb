@@ -53,12 +53,12 @@ RSpec.describe Workspaces::Workflow do
     install_recipe
     workspace = Workspaces::Registry.new.create(branch: 'main')
     Workspaces::EnvironmentOverrides.new(workspace.id).apply_patch(
-      set: { 'APP_MODE' => 'override', 'ROUTING_SUBDOMAIN' => 'preview', 'UE_APP' => '${WORKSPACE_PORT}' },
+      set: { 'APP_MODE' => 'override', 'APP_CHANNEL' => 'preview', 'APP_VARIANT' => '${WORKSPACE_PORT}' },
       remove: []
     )
 
     provision = 'File.open("provisioned", "a") { |f| ' \
-                'f.puts [ENV.fetch("APP_MODE"), ENV.fetch("UE_APP"), ENV.fetch("WORKSPACE_PORT")].join("|") }'
+                'f.puts [ENV.fetch("APP_MODE"), ENV.fetch("APP_VARIANT"), ENV.fetch("WORKSPACE_PORT")].join("|") }'
     root.join('.workspaces.yml').write(YAML.dump('version' => 1,
                                                  'env' => { 'APP_MODE' => 'global-default' },
                                                  'steps' => [

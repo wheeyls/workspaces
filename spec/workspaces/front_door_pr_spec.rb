@@ -79,13 +79,13 @@ RSpec.describe Workspaces::FrontDoor do
   end
 
   it 'uses the configured public origin for hosted creation and redirects' do
-    ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.coolify.tools.g2.com') do
+    ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.example.test') do
       allow(registry).to receive(:create).and_return(instance_double(Workspaces::Worktree, id: 'pr-43828-abc'))
       allow(coordinator).to receive(:start).and_return(true)
-      status, headers, = request(method: 'POST', host: 'previews.coolify.tools.g2.com',
-                                 origin: 'https://previews.coolify.tools.g2.com')
+      status, headers, = request(method: 'POST', host: 'previews.example.test',
+                                 origin: 'https://previews.example.test')
       expect(status).to eq(303)
-      expect(headers['location']).to eq('https://previews.coolify.tools.g2.com/workspaces/pr-43828-abc')
+      expect(headers['location']).to eq('https://previews.example.test/workspaces/pr-43828-abc')
     end
   end
 

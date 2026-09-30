@@ -21,7 +21,7 @@ RSpec.describe Workspaces::CommandRunner do
     workspace_id = 'fixture-1234'
     file = StringIO.new
     log = Workspaces::TeeLog.new(workspace_id, file)
-    Workspaces::EnvironmentOverrides.new(workspace_id).apply_patch(set: { 'UE_APP' => 'top-secret-token' }, remove: [])
+    Workspaces::EnvironmentOverrides.new(workspace_id).apply_patch(set: { 'APP_VARIANT' => 'top-secret-token' }, remove: [])
 
     described_class.new(Workspaces::Config.home.tap(&:mkpath), log)
       .run!(['ruby', '-e', 'puts "token=top-secret-token"'], env: {}, timeout: 5)

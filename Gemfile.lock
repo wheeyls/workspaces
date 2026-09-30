@@ -2,7 +2,7 @@ PATH
   remote: .
   specs:
     workspaces (0.1.0)
-      puma (>= 6, < 8)
+      puma (>= 6, < 9)
       rack (~> 3.2)
       rackup (~> 2.2)
 
@@ -24,10 +24,10 @@ DEPENDENCIES
   workspaces!
 
 CHECKSUMS
-  nio4r (2.7.5)
-  puma (6.4.2)
-  rack (3.2.7)
-  rackup (2.3.1)
+  nio4r (2.7.5) sha256=6c90168e48fb5f8e768419c93abb94ba2b892a1d0602cb06eef16d8b7df1dca1
+  puma (6.4.2) sha256=3eb41999d00733280be3faeb00d610331b6965a537a8cd3d905f316c38575b44
+  rack (3.2.7) sha256=93e13e1c24f93556671d85d2d79fa228c3485815c50d7e2f265b5330c6528fb7
+  rackup (2.3.1) sha256=6c79c26753778e90983761d677a48937ee3192b3ffef6bc963c0950f94688868
   workspaces (0.1.0)
 
 BUNDLED WITH

@@ -30,7 +30,7 @@ RSpec.describe Workspaces::FrontDoor, '#update_environment' do
     status, headers, = request(
       "/workspaces/#{workspace.id}/environment",
       headers: { 'HTTP_ORIGIN' => 'http://localhost:4747' },
-      form: Rack::Utils.build_nested_query('set' => { 'UE_APP' => 'override', 'ROUTING_SUBDOMAIN' => 'preview' })
+      form: Rack::Utils.build_nested_query('set' => { 'APP_VARIANT' => 'override', 'APP_CHANNEL' => 'preview' })
     )
 
     expect(status).to eq(303)
@@ -38,12 +38,12 @@ RSpec.describe Workspaces::FrontDoor, '#update_environment' do
 
     snapshot = coordinator.wait(workspace.id)
     expect(snapshot['status']).to eq('ready')
-    expect(snapshot['environment_keys']).to eq(%w(ROUTING_SUBDOMAIN UE_APP))
+    expect(snapshot['environment_keys']).to eq(%w(APP_CHANNEL APP_VARIANT))
     visible_fields = [snapshot['message'], snapshot['last_error'], snapshot['log_tail']].join("\n")
     expect(visible_fields).not_to include('override', 'preview')
     expect(Workspaces::EnvironmentOverrides.new(workspace.id).load).to eq(
-      'UE_APP' => 'override',
-      'ROUTING_SUBDOMAIN' => 'preview'
+      'APP_VARIANT' => 'override',
+      'APP_CHANNEL' => 'preview'
     )
   end
 
@@ -54,26 +54,26 @@ RSpec.describe Workspaces::FrontDoor, '#update_environment' do
     request(
       "/workspaces/#{workspace.id}/environment",
       headers: origin,
-      form: Rack::Utils.build_nested_query('set' => { 'UE_APP' => 'override', 'ROUTING_SUBDOMAIN' => 'preview' })
+      form: Rack::Utils.build_nested_query('set' => { 'APP_VARIANT' => 'override', 'APP_CHANNEL' => 'preview' })
     )
     coordinator.wait(workspace.id)
 
     request(
       "/workspaces/#{workspace.id}/environment",
       headers: origin,
-      form: Rack::Utils.build_nested_query('set' => { 'ROUTING_SUBDOMAIN' => 'second' })
+      form: Rack::Utils.build_nested_query('set' => { 'APP_CHANNEL' => 'second' })
     )
     coordinator.wait(workspace.id)
 
     expect(Workspaces::EnvironmentOverrides.new(workspace.id).load).to eq(
-      'UE_APP' => 'override',
-      'ROUTING_SUBDOMAIN' => 'second'
+      'APP_VARIANT' => 'override',
+      'APP_CHANNEL' => 'second'
     )
 
     request(
       "/workspaces/#{workspace.id}/environment",
       headers: origin,
-      form: Rack::Utils.build_nested_query('remove' => %w(UE_APP ROUTING_SUBDOMAIN))
+      form: Rack::Utils.build_nested_query('remove' => %w(APP_VARIANT APP_CHANNEL))
     )
     snapshot = coordinator.wait(workspace.id)
 
@@ -87,7 +87,7 @@ RSpec.describe Workspaces::FrontDoor, '#update_environment' do
       status, = request(
         "/workspaces/#{workspace.id}/environment",
         headers: { 'HTTP_ORIGIN' => 'http://localhost:4747' },
-        form: Rack::Utils.build_nested_query('set' => { 'UE_APP' => 'override' })
+        form: Rack::Utils.build_nested_query('set' => { 'APP_VARIANT' => 'override' })
       )
       expect(status).to eq(409)
     end
@@ -109,7 +109,7 @@ RSpec.describe Workspaces::FrontDoor, '#update_environment' do
     status, = request(
       "/workspaces/#{workspace.id}/environment",
       headers: origin,
-      form: Rack::Utils.build_nested_query('set' => { 'UE_APP' => 'override' }, 'remove' => ['UE_APP'])
+      form: Rack::Utils.build_nested_query('set' => { 'APP_VARIANT' => 'override' }, 'remove' => ['APP_VARIANT'])
     )
     expect(status).to eq(422)
     expect(Workspaces::EnvironmentOverrides.new(workspace.id).load).to eq({})
@@ -139,13 +139,13 @@ RSpec.describe Workspaces::FrontDoor, '#update_environment' do
 
   def environment_recipe
     provision = 'File.open("provisioned", "a") { |f| ' \
-                'f.puts [ENV.fetch("UE_APP"), ENV.fetch("ROUTING_SUBDOMAIN")].join("|") }'
+                'f.puts [ENV.fetch("APP_VARIANT"), ENV.fetch("APP_CHANNEL")].join("|") }'
     { 'version' => 1,
-      'env' => { 'UE_APP' => 'global-default', 'ROUTING_SUBDOMAIN' => 'routing-default' },
+      'env' => { 'APP_VARIANT' => 'global-default', 'APP_CHANNEL' => 'routing-default' },
       'steps' => [
         {
           'id' => 'provision', 'name' => 'Provision fixture',
-          'run' => ['ruby', '-e', provision], 'env' => { 'UE_APP' => 'fixture' }
+          'run' => ['ruby', '-e', provision], 'env' => { 'APP_VARIANT' => 'fixture' }
         },
         { 'id' => 'app', 'name' => 'Run socket server', 'run' => ['ruby', 'server.rb'], 'background' => true },
         { 'id' => 'ready', 'name' => 'Verify fixture identity', 'run' => ['ruby', 'ready.rb'], 'timeout' => 15 }

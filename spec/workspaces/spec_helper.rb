@@ -19,7 +19,7 @@ RSpec.configure do |config|
       ClimateControl.modify('WORKSPACES_HOME' => File.join(dir, 'home'),
                             'WORKSPACES_REPO_ROOT' => File.join(dir, 'repo'),
                             'WORKSPACES_PUBLIC_ORIGIN' => 'http://localhost:4747',
-                            'WORKSPACES_GITHUB_REPO' => 'fixture/example',
+                            'WORKSPACES_GITHUB_REPO' => 'example/project',
                             'WORKSPACE_CACHE_DIR' => File.join(dir, 'home'),
                             'WORKSPACES_SUBDOMAIN_PREFIX' => 'ws-', 'WORKSPACES_BASE_DOMAIN' => 'localhost') do
         Workspaces::Config.instance_variable_set(:@home, nil)

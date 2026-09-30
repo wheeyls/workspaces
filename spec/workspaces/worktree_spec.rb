@@ -22,11 +22,11 @@ RSpec.describe Workspaces::Worktree do
 
   it 'allows many workspaces per PR and reconstructs associations from excluded metadata' do
     allow_any_instance_of(described_class).to receive(:resolve_pr).with('43828').and_return(
-      'kind' => 'pr', 'repository' => 'g2crowd/ue', 'number' => 43828, 'branch' => 'feature', 'ref' => 'main'
+      'kind' => 'pr', 'repository' => 'example/project', 'number' => 43828, 'branch' => 'feature', 'ref' => 'main'
     )
     first = described_class.create(pr: '43828')
     second = described_class.create(pr: '43828')
-    expect(first.related_pr).to eq('repository' => 'g2crowd/ue', 'number' => 43828)
+    expect(first.related_pr).to eq('repository' => 'example/project', 'number' => 43828)
     expect(git('status', '--porcelain', cwd: first.path)).to eq('')
     workspaces = Workspaces::Registry.new.list(pr: '43828')
     expect(workspaces).to contain_exactly(include('id' => first.id), include('id' => second.id))
@@ -64,7 +64,7 @@ RSpec.describe Workspaces::Worktree do
     workspace = described_class.new('pr-43828-fixture')
     sha = git('rev-parse', 'HEAD')
     status = instance_double(Process::Status, success?: true)
-    allow(Open3).to receive(:capture2e).with('gh', 'pr', 'view', '43828', '--repo', 'fixture/example',
+    allow(Open3).to receive(:capture2e).with('gh', 'pr', 'view', '43828', '--repo', 'example/project',
                                              '--json', 'headRefName,headRefOid', chdir: Workspaces::Config.repo_root.to_s)
                       .and_return([JSON.generate('headRefName' => 'feature/checkout', 'headRefOid' => sha), status])
     allow(workspace).to receive(:git!).with('fetch', 'origin', 'pull/43828/head').and_return('')
