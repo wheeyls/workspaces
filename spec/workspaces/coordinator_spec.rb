@@ -5,6 +5,29 @@ RSpec.describe Workspaces::Coordinator do
 
   let(:workspace) { Workspaces::Registry.new.create(branch: 'main') }
 
+  it 'seeds nil durations before prepare and restart workers and preserves persisted timings in snapshots' do
+    state = Workspaces::StateStore.new(Workspaces::Config.state_file)
+    backend = instance_double(Workspaces::Backend, running?: true)
+    allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
+    workflow = instance_double(Workspaces::Workflow)
+    allow(Workspaces::Workflow).to receive(:new).and_return(workflow)
+    allow(workflow).to receive(:run!) do |restart:|
+      steps = state.get(workspace.id)['steps']
+      expect(steps.map { |step| step['key'] }).to eq(restart ? %w(app ready) : %w(setup app ready))
+      expect(steps).to all(include('state' => 'pending', 'duration_seconds' => nil))
+      steps.each { |step| step.merge!('state' => 'complete', 'duration_seconds' => 1.234) }
+      state.set(workspace.id, 'steps' => steps)
+      30123
+    end
+    coordinator = described_class.new
+
+    expect(coordinator.start(workspace.id, force: true)).to be(true)
+    expect(coordinator.wait(workspace.id)['steps']).to all(include('duration_seconds' => 1.234))
+    expect(coordinator.restart(workspace.id)).to be(true)
+    expect(coordinator.wait(workspace.id)['steps']).to all(include('duration_seconds' => 1.234))
+    expect(described_class.new.snapshot(workspace.id)['steps']).to eq(state.get(workspace.id)['steps'])
+  end
+
   it 'prepares and restarts without changing branch, fetching, or cleaning agent work' do
     File.write(workspace.path.join('tracked.txt'), 'edited')
     File.write(workspace.path.join('scratch.txt'), 'untracked')

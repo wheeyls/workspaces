@@ -1,4 +1,5 @@
 require_relative 'spec_helper'
+require 'json'
 
 RSpec.describe Workspaces::DashboardView do
   let(:snapshot) do
@@ -33,6 +34,54 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).not_to include('Stop server', 'Restart server')
   end
 
+  it 'shows per-step duration for completed and failed steps when numeric duration exists' do
+    steps = [
+      { 'key' => 'deps', 'label' => 'Dependencies', 'state' => 'complete', 'duration_seconds' => 12.345 },
+      { 'key' => 'assets', 'label' => 'Assets', 'state' => 'failed', 'duration_seconds' => 0.5 }
+    ]
+
+    html = described_class.render(snapshot.merge('status' => 'error', 'failed_phase' => 'assets',
+                                                 'last_error' => 'Build failed', 'operation' => 'prepare',
+                                                 'steps' => steps))
+
+    expect(html).to include('complete · 12.345s')
+    expect(html).to include('failed · 0.500s')
+  end
+
+  it 'shows state only for active pending and missing durations' do
+    steps = [
+      { 'key' => 'deps', 'label' => 'Dependencies', 'state' => 'pending' },
+      { 'key' => 'assets', 'label' => 'Assets', 'state' => 'active', 'duration_seconds' => nil },
+      { 'key' => 'ready', 'label' => 'Ready', 'state' => 'complete', 'duration_seconds' => nil }
+    ]
+
+    html = described_class.render(snapshot.merge('active' => true, 'status' => 'preparing',
+                                                 'message' => 'Building assets', 'steps' => steps))
+
+    expect(html).to include('<span class="step-outcome">pending</span>')
+    expect(html).to include('<span class="step-outcome">active</span>')
+    expect(html).to include('<span class="step-outcome">complete</span>')
+    expect(html).not_to include('complete ·')
+    expect(html).not_to include('active ·')
+    expect(html).not_to include('pending ·')
+  end
+
+  it 'shows state only for null and negative completed durations' do
+    steps = [
+      { 'key' => 'complete-null', 'label' => 'Complete null', 'state' => 'complete', 'duration_seconds' => nil },
+      { 'key' => 'failed-negative', 'label' => 'Failed negative', 'state' => 'failed', 'duration_seconds' => -1.234 }
+    ]
+
+    html = described_class.render(snapshot.merge('status' => 'error', 'failed_phase' => 'failed-negative',
+                                                 'last_error' => 'Build failed', 'operation' => 'prepare',
+                                                 'steps' => steps))
+
+    expect(html).to include('<span class="step-outcome">complete</span>')
+    expect(html).to include('<span class="step-outcome">failed</span>')
+    expect(html).not_to include('complete ·')
+    expect(html).not_to include('failed ·')
+  end
+
   it 'offers server restart retry without pretending dependencies were rebuilt' do
     html = described_class.render(snapshot.merge('status' => 'error', 'operation' => 'restart',
                                                  'failed_phase' => 'booting', 'last_error' => 'Boot failed'))
@@ -54,6 +103,33 @@ RSpec.describe Workspaces::DashboardView do
 
     expect(html).to include('name="editable_env"')
     expect(html).to include('/workspaces/agent-123/environment')
+  end
+
+  it 'executes client-side step duration formatting with runtime-safe guards' do
+    app_js = File.read(File.join(__dir__, '../../lib/workspaces/dashboard/app.js'))
+    match = app_js.match(/function stepOutcome\(step\) \{.*?\n  \}/m)
+    expect(match).not_to be_nil
+
+    script = <<~NODE
+      const vm = require('node:vm');
+      #{match[0]}
+      const cases = [
+        { step: { state: 'complete', duration_seconds: 12.3456 }, expected: 'complete · 12.346s' },
+        { step: { state: 'failed', duration_seconds: 0.5 }, expected: 'failed · 0.500s' },
+        { step: { state: 'complete', duration_seconds: null }, expected: 'complete' },
+        { step: { state: 'failed', duration_seconds: -1 }, expected: 'failed' },
+        { step: { state: 'complete', duration_seconds: Infinity }, expected: 'complete' },
+        { step: { state: 'complete', duration_seconds: 'abc' }, expected: 'complete' },
+        { step: { state: 'active', duration_seconds: 2 }, expected: 'active' }
+      ];
+      const actual = cases.map((c) => stepOutcome(c.step));
+      process.stdout.write(JSON.stringify({ actual, expected: cases.map((c) => c.expected) }));
+    NODE
+
+    output, status = Open3.capture2('node', '-e', script)
+    expect(status.success?).to eq(true)
+    result = JSON.parse(output)
+    expect(result['actual']).to eq(result['expected'])
   end
 
   it 'shows the future preview destination and one selected log at a time' do

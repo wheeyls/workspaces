@@ -11,7 +11,7 @@
     <p id="message"><%= field('message') %></p>
     <ol class="stepper" id="progress" aria-label="Setup progress">
       <% @presentation['steps'].each do |step| %>
-        <li class="step" data-step-state="<%= step['state'] %>" <%= 'aria-current="step"' if step['state'] == 'active' %>><span class="step-bullet" aria-hidden="true"></span><span><%= escape(step['label']) %></span><span class="step-outcome"><%= step['state'] %></span></li>
+        <li class="step" data-step-state="<%= step['state'] %>" <%= 'aria-current="step"' if step['state'] == 'active' %>><span class="step-bullet" aria-hidden="true"></span><span><%= escape(step['label']) %></span><span class="step-outcome"><%= escape(step_outcome(step)) %></span></li>
       <% end %>
     </ol>
     <section class="error-panel setup-error" id="error-panel" role="alert" <%= 'hidden' unless @presentation['error'] %>>

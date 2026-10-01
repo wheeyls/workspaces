@@ -39,6 +39,17 @@ The returned JSON includes the workspace ID, dashboard URL, and preview URL. You
 create from a pull request with `create --pr NUMBER`, or create a new branch with
 `create --new-branch NAME --from REF`. Run `help` for lifecycle and other commands.
 
+### Step timings
+
+Per-step durations are persisted in seconds in workspace step status JSON, so they
+remain available after the command exits. Timings also appear in CLI progress,
+the workspace setup log, and the dashboard's step list.
+
+A background step measures only process launch, not the server's lifetime or
+readiness. The following readiness step measures its own wait separately.
+Interrupted steps have no recorded duration. Step timings are not the total
+workflow wall-clock time; orchestration overhead can fall outside the steps.
+
 ## Serve the dashboard and previews
 
 Run `serve` in a separate terminal using the **same project root and `WORKSPACES_HOME`**

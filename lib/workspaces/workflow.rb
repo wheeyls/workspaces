@@ -33,7 +33,7 @@ module Workspaces
 
     def publish_steps(steps)
       @state.set(@workspace.id, 'steps' => steps.map do |step|
-        { 'key' => step['id'], 'label' => step['name'], 'state' => 'pending' }
+        { 'key' => step['id'], 'label' => step['name'], 'state' => 'pending', 'duration_seconds' => nil }
       end)
     end
 
@@ -48,6 +48,7 @@ module Workspaces
     end
 
     def execute(step, recipe, context, runner, overrides)
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       progress(step, 'active')
       @log.puts "==> #{step.fetch('name')}"
       command = recipe.command(step, context)
@@ -59,16 +60,24 @@ module Workspaces
         @backend.ensure_alive! if @server_started
       end
       @server_started = true if step['background']
-      progress(step, 'complete')
     rescue StandardError
-      progress(step, 'failed')
+      finish_step(step, 'failed', started_at)
       raise
+    else
+      finish_step(step, 'complete', started_at)
     end
 
-    def progress(step, status)
+    def finish_step(step, status, started_at)
+      duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).round(3)
+      progress(step, status, duration_seconds: duration)
+      @log.puts format('==> %s %s (%.3fs)', step.fetch('name'), status, duration)
+    end
+
+    def progress(step, status, duration_seconds: nil)
       @state.transaction do |data|
         entry = data.fetch(@workspace.id)
-        entry['steps'].find { |item| item['key'] == step['id'] }['state'] = status
+        entry['steps'].find { |item| item['key'] == step['id'] }
+          .merge!('state' => status, 'duration_seconds' => duration_seconds)
         entry['message'] = step['name']
         entry['current_step'] = step['id']
         entry['updated_at'] = Time.now.utc.iso8601

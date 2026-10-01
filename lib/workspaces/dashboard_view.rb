@@ -128,5 +128,15 @@ module Workspaces
       "<form method=\"post\" action=\"/workspaces/#{@id}/#{action.fetch('key')}\">" \
         "<button class=\"button #{style}\">#{escape(action.fetch('label'))}</button></form>"
     end
+
+    def step_outcome(step)
+      state = step['state'].to_s
+      return state unless %w(complete failed).include?(state)
+
+      duration = step['duration_seconds']
+      return state unless duration.is_a?(Numeric) && duration.finite? && duration >= 0
+
+      "#{state} · #{format('%.3f', duration)}s"
+    end
   end
 end
