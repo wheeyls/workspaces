@@ -74,4 +74,30 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('Live setup log', 'href="?log=setup" data-log-source="setup" aria-current="page"')
     expect(html).to include('aria-label="Setup log"')
   end
+
+  it 'isolates force removal in a Danger Zone with a typed ID confirmation' do
+    html = described_class.render(snapshot)
+    expect(html).to include('Danger Zone', 'action="/workspaces/agent-123/remove"')
+    expect(html).to include('name="confirm_id"', 'Discard uncommitted and untracked changes')
+    expect(html).to include('Delete workspace')
+  end
+
+  it 'shows a read-only inventory with explicit running state and timestamps' do
+    html = described_class.index([
+      snapshot.merge('id' => 'agent-123', 'created_at' => '2026-10-01T11:00:00Z',
+                     'started_at' => '2026-10-01T12:00:00Z', 'status' => 'ready', 'running' => true),
+      snapshot.merge('id' => 'agent-456', 'status' => 'error', 'running' => false)
+    ])
+
+    expect(html).to include('Running', 'Not running', '2026-10-01T11:00:00Z', '2026-10-01T12:00:00Z')
+    expect(html).to include('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).not_to include('<script>alert(1)</script>', '/workspaces/agent-123/remove')
+  end
+
+  it 'keeps the delete form disabled during a busy setup, including on the initial HTML response' do
+    html = described_class.render(snapshot.merge('status' => 'preparing', 'active' => true))
+    expect(html).to include('action="/workspaces/agent-123/remove"')
+    expect(html).to match(/name="confirm_id"[^>]*disabled/)
+    expect(html).to include('disabled>Delete workspace')
+  end
 end

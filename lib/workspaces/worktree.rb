@@ -9,6 +9,7 @@ module Workspaces
   class Worktree
     class CommandFailedError < StandardError; end
     class AuthenticationError < CommandFailedError; end
+    class UpdateError < StandardError; end
     AUTH_FAILURE = Regexp.union(/could not read (?:Username|Password)|terminal prompts disabled|Authentication failed/i,
                                 /Permission denied \(publickey\)|gh auth login|HTTP 401|HTTP 403/i)
     METADATA = '.workspace.json'.freeze
@@ -90,6 +91,32 @@ module Workspaces
       git!(*args, path.to_s)
     end
 
+    def update_from_pr!
+      require_owned!
+      source = metadata.fetch('source')
+      raise UpdateError, 'Only a PR workspace can be updated from a PR' unless source['kind'] == 'pr'
+      raise UpdateError, 'Resolve the retained workspace update stash before updating again' if update_stash?
+
+      number = source.fetch('number')
+      raise UpdateError, 'Invalid PR number in workspace metadata' unless number.to_s.match?(/\A[1-9][0-9]*\z/)
+
+      target = fetch_pr_head(number)
+      current = git!('rev-parse', 'HEAD', cwd: path)
+      raise UpdateError, 'Workspace branch has diverged from the PR; no files were changed' unless ancestor?(current, target)
+      return { 'updated' => false, 'head' => current } if current == target
+
+      stash = save_changes
+      begin
+        git!('-c', 'core.hooksPath=/dev/null', 'merge', '--ff-only', target, cwd: path)
+      rescue CommandFailedError
+        restore_changes(stash) if stash
+        raise UpdateError, 'Could not fast-forward the workspace; local changes were restored'
+      end
+
+      restore_changes(stash) if stash
+      { 'updated' => true, 'head' => target }
+    end
+
     def git!(*args, cwd: Config.repo_root)
       output, status = Open3.capture2e(git_environment, 'git', *args, chdir: cwd.to_s)
       raise_authentication_error!(output) unless status.success?
@@ -100,8 +127,61 @@ module Workspaces
 
     private
 
+    def fetch_pr_head(number)
+      ref = "refs/workspaces/updates/#{id}"
+      git!('fetch', 'origin', "+pull/#{number}/head:#{ref}", cwd: path)
+      target = git!('rev-parse', '--verify', "#{ref}^{commit}", cwd: path)
+      git!('update-ref', '-d', ref, cwd: path)
+      target
+    end
+
+    def ancestor?(current, target)
+      _, status = Open3.capture2e(git_environment, 'git', 'merge-base', '--is-ancestor', current, target,
+                                  chdir: path.to_s)
+      return true if status.exitstatus == 0
+      return false if status.exitstatus == 1
+
+      raise CommandFailedError, 'Unable to check PR ancestry'
+    end
+
+    def save_changes
+      return nil unless dirty?
+
+      previous = git!('rev-parse', '--verify', '-q', 'refs/stash', cwd: path) if stash_exists?
+      git!('stash', 'push', '--include-untracked', '-m', "workspaces update #{id}", cwd: path)
+      current = git!('rev-parse', '--verify', 'refs/stash', cwd: path)
+      raise UpdateError, 'Unable to save workspace changes; check the worktree and stash before retrying' if current == previous || dirty?
+
+      current
+    end
+
+    def stash_exists?
+      _, status = Open3.capture2e(git_environment, 'git', 'rev-parse', '--verify', '-q', 'refs/stash',
+                                  chdir: path.to_s)
+      status.success?
+    end
+
+    def update_stash?
+      git!('stash', 'list', '--format=%gs', cwd: path).lines.any? do |line|
+        line.chomp.end_with?("workspaces update #{id}")
+      end
+    end
+
+    def restore_changes(stash)
+      return unless stash
+
+      begin
+        git!('stash', 'apply', '--index', stash, cwd: path)
+      rescue CommandFailedError
+        raise UpdateError, "Workspace changes could not be reapplied. Stash #{stash} is retained for manual recovery; resolve worktree conflicts before retrying"
+      end
+      return unless git!('rev-parse', 'refs/stash', cwd: path) == stash
+
+      git!('stash', 'drop', 'stash@{0}', cwd: path)
+    end
+
     def git_environment
-      { 'GIT_TERMINAL_PROMPT' => '0', 'GIT_ASKPASS' => '/bin/false', 'SSH_ASKPASS' => '/bin/false',
+      { 'GIT_MASTER' => '1', 'GIT_TERMINAL_PROMPT' => '0', 'GIT_ASKPASS' => '/bin/false', 'SSH_ASKPASS' => '/bin/false',
         'GCM_INTERACTIVE' => 'Never', 'GIT_SSH_COMMAND' => noninteractive_ssh }
     end
 

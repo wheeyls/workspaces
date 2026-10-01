@@ -50,10 +50,16 @@ module Workspaces
 
     def actions
       return [] if busy?
-      return %w(prepare restart stop).map { |key| action(key, false) } if status == 'ready'
-      return [retry_action] if %w(error interrupted).include?(status)
+      available = if status == 'ready'
+                    %w(prepare restart stop).map { |key| action(key, false) }
+                  elsif %w(error interrupted).include?(status)
+                    [retry_action]
+                  else
+                    [action('start', true)]
+                  end
+      available << { 'key' => 'update-pr', 'label' => 'Update from PR', 'primary' => false } if @snapshot.dig('source', 'kind') == 'pr'
+      available
 
-      [action('start', true)]
     end
 
     def retry_action

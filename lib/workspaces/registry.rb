@@ -1,5 +1,6 @@
 require_relative 'worktree'
 require_relative 'state_store'
+require_relative 'backend'
 
 module Workspaces
   class Registry
@@ -32,6 +33,31 @@ module Workspaces
         end
 
         yield workspace
+      end
+    end
+
+    def remove(id, force: false)
+      with_lock(id) do |workspace|
+        raise ArgumentError, 'Workspace has uncommitted/untracked work' if !force && workspace.dirty?
+
+        Backend.new(id).stop!
+        workspace.remove!(force: force)
+        StateStore.new(Config.state_file).delete(id)
+      end
+    end
+
+    def update_pr(id)
+      with_lock(id) do |workspace|
+        result = workspace.update_from_pr!
+        message = result['updated'] ? 'PR checkout updated. Rebuild & restart to run the new code.' : 'PR checkout is already current.'
+        StateStore.new(Config.state_file).set(id, 'source_update_message' => message,
+                                                  'source_updated_at' => Time.now.utc.iso8601)
+        result
+      rescue Worktree::UpdateError, Worktree::CommandFailedError => e
+        message = e.is_a?(Worktree::CommandFailedError) ? 'Could not fetch or update the PR checkout; local files were not intentionally discarded' : e.message
+        StateStore.new(Config.state_file).set(id, 'source_update_message' => message,
+                                                  'source_updated_at' => Time.now.utc.iso8601)
+        raise Worktree::UpdateError, message
       end
     end
 

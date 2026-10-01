@@ -67,6 +67,25 @@ provides `WORKSPACE_RUN_ID`). The runner also supplies `WORKSPACE_URL` and
 `WORKSPACE_HOST` for applications that need browser-facing URLs and host settings.
 `serve` does **not** start workspace backends; use `start` or `restart` for those.
 
+The `/workspaces` dashboard lists each managed workspace's setup status, whether its
+backend is running, creation time, and last backend startup. On a workspace's detail
+page, the Danger Zone lets an operator delete that one workspace after typing its
+exact ID. Deletion stops the backend and force-removes the worktree, including
+uncommitted and untracked files; the branch and committed changes are preserved.
+Busy workspaces cannot be removed until their current operation finishes. This
+action is protected by the dashboard's same-origin POST check, but that check is
+not authentication—keep hosted deployments behind VPN or SSO.
+
+The dashboard favicon is blue for localhost and gold for hosted origins, helping
+distinguish local and hosted tabs.
+
+PR workspaces also offer **Update from PR** on their detail page. It fetches the
+latest PR head and fast-forwards the workspace branch only when the new head is
+a descendant of its current commit. Local tracked and untracked changes are
+temporarily stashed and restored (including staged state). On a restore conflict,
+the stash is retained for manual recovery. Updating the checkout does not run
+setup or restart the already-running backend; use Rebuild & restart afterward.
+
 The front door is not an authentication boundary. Its host and same-origin checks
 protect routing and POST actions, but a publicly reachable instance still needs
 access control such as VPN or SSO. Do not expose workspace backend ports directly.

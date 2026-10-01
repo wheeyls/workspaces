@@ -21,8 +21,8 @@ module Workspaces
           <p><label>Start new branch from <input name="from" placeholder="HEAD"></label></p>
           <button class="button button--primary">Create workspace</button>
         </form></section>
-        <section class="status-panel"><h2>Managed workspaces</h2><ul>
-        #{workspaces.map { |workspace| "<li><a href=\"/workspaces/#{view.escape(workspace.fetch('id'))}\">#{view.escape(workspace.fetch('id'))}</a> — #{view.escape(workspace['branch'])}</li>" }.join}
+        <section class="status-panel"><h2>Managed workspaces</h2><ul class="workspace-list">
+        #{workspaces.map { |workspace| view.inventory_item(workspace) }.join}
         </ul></section></main>
       HTML
     end
@@ -33,6 +33,20 @@ module Workspaces
 
     def self.checkout_authentication_error(path)
       new({}).render_checkout_authentication_error(path)
+    end
+
+    def self.favicon
+      local = Config.public_uri.host.match?(/(?:\A|\.)localhost\z/i)
+      color = local ? '#4f8dff' : '#f1bb53'
+      <<~SVG
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Workspaces">
+          <rect x="3" y="3" width="58" height="58" rx="13" fill="#0f1524"/>
+          <rect x="11" y="13" width="42" height="38" rx="5" fill="none" stroke="#{color}" stroke-width="4"/>
+          <path d="M11 25h42M32 25v26" fill="none" stroke="#{color}" stroke-width="4"/>
+          <circle cx="18" cy="19" r="2" fill="#{color}"/>
+          <circle cx="25" cy="19" r="2" fill="#{color}"/>
+        </svg>
+      SVG
     end
 
     def initialize(snapshot)
@@ -66,12 +80,27 @@ module Workspaces
                File.read(File.join(__dir__, 'dashboard/environment.js'), encoding: 'UTF-8')
       '<!doctype html><html lang="en"><head><meta charset="utf-8">' \
         '<meta name="viewport" content="width=device-width, initial-scale=1">' \
+        '<link rel="icon" type="image/svg+xml" href="/favicon.svg">' \
         "<title>#{escape(title)}</title><style>#{css}</style></head>" \
         "<body>#{body}<script>#{script}</script></body></html>"
     end
 
     def escape(value)
       ERB::Util.html_escape(value.to_s)
+    end
+
+    def inventory_item(workspace)
+      id = escape(Config.validate_id!(workspace.fetch('id')))
+      running = workspace['running'] ? 'Running' : 'Not running'
+      <<~HTML
+        <li class="workspace-list__item">
+          <a href="/workspaces/#{id}">#{id}</a>
+          <span class="muted">#{escape(workspace['branch'])}</span>
+          <span>#{running} · #{escape(workspace['status'] || 'idle')}#{workspace['active'] ? ' (busy)' : ''}</span>
+          <span class="muted">Created <time datetime="#{escape(workspace['created_at'])}">#{escape(workspace['created_at'] || 'Unavailable')}</time></span>
+          <span class="muted">Last startup <time datetime="#{escape(workspace['started_at'])}">#{escape(workspace['started_at'] || 'Never')}</time></span>
+        </li>
+      HTML
     end
 
     private

@@ -312,6 +312,19 @@ fieldset:disabled {
   border-color: var(--border);
 }
 
+.button--danger {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+.button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+.danger-zone { border-color: var(--danger); }
+.danger-zone h2 { margin-block-start: 0; color: var(--danger); }
+.danger-zone form { display: grid; justify-items: start; gap: var(--space-3); }
+.workspace-list { list-style: none; padding: 0; display: grid; gap: var(--space-3); }
+.workspace-list__item { display: grid; gap: var(--space-1); padding-block: var(--space-3); border-block-end: 1px solid var(--border); overflow-wrap: anywhere; }
+
 .button--success {
   background: color-mix(in oklab, var(--success) 22%, transparent);
   border-color: color-mix(in oklab, var(--success) 55%, var(--border));

@@ -60,6 +60,17 @@ module Workspaces
       data.merge('presentation' => Presentation.new(data).to_h)
     end
 
+    def inventory
+      @registry.list.map do |workspace|
+        id = workspace.fetch('id')
+        entry = @state.get(id) || {}
+        busy = locked?(id)
+        workspace.merge('status' => resolve_status(id, entry.fetch('status', 'idle'), busy),
+                        'running' => !!Backend.new(id).running?, 'active' => busy,
+                        'started_at' => entry['started_at'])
+      end
+    end
+
     private
 
     def resolve_status(id, status, busy)
@@ -74,7 +85,9 @@ module Workspaces
       {
         'workspace_id' => id, 'status' => status, 'active' => busy,
         'message' => status == entry['status'] ? entry['message'] : status.capitalize,
-        'prepare_started_at' => entry['prepare_started_at'], 'updated_at' => entry['updated_at'],
+        'prepare_started_at' => entry['prepare_started_at'], 'started_at' => entry['started_at'],
+        'running' => !!Backend.new(id).running?, 'updated_at' => entry['updated_at'],
+        'source_update_message' => entry['source_update_message'],
         'completed_at' => entry['completed_at'], 'last_error' => entry['last_error'],
         'operation' => entry['operation'], 'failed_phase' => failure_phase(entry, status),
         'steps' => entry.fetch('steps', []),

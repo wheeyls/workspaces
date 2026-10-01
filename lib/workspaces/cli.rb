@@ -137,16 +137,7 @@ module Workspaces
     end
 
     def remove(id, options)
-      registry.with_lock(id) do |workspace|
-        if !options[:force] && workspace.dirty?
-          raise ArgumentError,
-                'Workspace has uncommitted/untracked work; use --force to discard it'
-        end
-
-        Backend.new(id).stop!
-        workspace.remove!(force: options[:force])
-        StateStore.new(Config.state_file).delete(id)
-      end
+      registry.remove(id, force: options[:force])
       emit({ 'id' => id, 'removed' => true, 'branch_preserved' => true }, options)
     end
 

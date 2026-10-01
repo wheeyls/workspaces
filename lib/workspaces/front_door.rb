@@ -9,7 +9,7 @@ require_relative 'environment_overrides'
 module Workspaces
   class FrontDoor
     WORKSPACE_ROUTE = %r{\A/workspaces/([a-z0-9]+(?:-[a-z0-9]+)*)
-                          (?:/(status|start|prepare|restart|stop|environment))?\z}x
+                          (?:/(status|start|prepare|restart|stop|remove|update-pr|environment))?\z}x
 
     def initialize(coordinator: Coordinator.new, registry: Registry.new)
       @coordinator = coordinator
@@ -35,12 +35,19 @@ module Workspaces
     private
 
     def route(request)
+      return favicon(request) if request.path_info == '/favicon.svg'
       return index(request) if ['/', '/workspaces'].include?(request.path_info)
       return create(request) if request.path_info == '/workspaces/create'
       pr_match = %r{\A/pr/([1-9][0-9]*)\z}.match(request.path_info)
       return pr_preview(request, pr_match[1]) if pr_match
 
       workspace_route(request)
+    end
+
+    def favicon(request)
+      return response(405, 'Use GET or HEAD') unless safe?(request)
+
+      response(200, DashboardView.favicon, type: 'image/svg+xml', head: request.head?)
     end
 
     def workspace_route(request)
@@ -69,7 +76,7 @@ module Workspaces
     def index(request)
       return response(405, 'Use GET or HEAD') unless safe?(request)
 
-      response(200, DashboardView.index(@registry.list), type: 'text/html', head: request.head?)
+      response(200, DashboardView.index(@coordinator.inventory), type: 'text/html', head: request.head?)
     end
 
     def action_request(request, id, action)
@@ -77,6 +84,8 @@ module Workspaces
       return status_response(request, id, action) if action.nil? || action == 'status'
       return response(405, 'Use POST') unless request.post?
       return response(403, 'Actions require the configured dashboard origin') unless same_origin?(request)
+      return remove(request, id) if action == 'remove'
+      return update_pr(id) if action == 'update-pr'
 
       perform_action(id, action)
       redirect(Config.dashboard_url(id))
@@ -124,6 +133,26 @@ module Workspaces
         Backend.new(id).stop!
         StateStore.new(Config.state_file).set(id, 'status' => 'stopped', 'message' => 'Server stopped')
       end
+    end
+
+    def remove(request, id)
+      unless request.media_type == 'application/x-www-form-urlencoded'
+        return response(415, 'Deletion requires a form-encoded confirmation')
+      end
+      return response(413, 'Deletion confirmation is too large') if request.content_length.to_i > 512
+      return response(422, 'Type the exact workspace ID to confirm deletion') unless request.POST['confirm_id'] == id
+
+      @registry.remove(id, force: true)
+      redirect("#{Config.public_origin}/workspaces")
+    rescue ArgumentError, Worktree::CommandFailedError, SystemCallError
+      response(409, 'Workspace was not removed. Check the server logs and retry when safe.')
+    end
+
+    def update_pr(id)
+      @registry.update_pr(id)
+      redirect(Config.dashboard_url(id))
+    rescue Worktree::UpdateError
+      redirect(Config.dashboard_url(id))
     end
 
     def create(request)

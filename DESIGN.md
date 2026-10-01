@@ -4,7 +4,7 @@
 
 Workspace list/create screen and per-workspace setup/status screen. Workspace identity is independent of PR provenance.
 
-GET is read-only. All creation and lifecycle controls submit same-origin POST forms. No source-reset or cleanup button exists. Workspace IDs, branches and filesystem paths wrap on narrow screens. Native labelled inputs and buttons are keyboard accessible; polling announces status without replacing form focus or making the entire log an ARIA live region.
+GET is read-only. All creation and lifecycle controls submit same-origin POST forms. Workspace IDs, branches and filesystem paths wrap on narrow screens. Native labelled inputs and buttons are keyboard accessible; polling announces status without replacing form focus or making the entire log an ARIA live region.
 
 ## Visual direction
 
@@ -41,9 +41,11 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 ## Component primitives
 
 - **Creation form**: labelled branch, PR, and new-branch inputs with a primary create action
+- **Workspace inventory**: one row per managed workspace with a status distinct from backend running state, creation and last startup times, and a link to its detail page. Unknown timestamps are shown as unavailable, not inferred from recent setup.
 - **Status pill**: current workspace status as text
 - **Setup progress**: names and ordered states come from repository run steps; failures are highlighted. Restart shows the background launch and later readiness commands.
 - **Actions by state**: idle/stopped offers Start; active operations show progress without lifecycle buttons; failure offers Retry; ready offers Open workspace plus rebuild/restart/stop.
+- **PR source update**: a secondary Update from PR form only for PR-sourced workspaces; it fetches the latest PR head, fast-forwards the checkout, and preserves local edits without rebuilding or restarting. A persistent result message explains when rebuild is needed or when a retained stash needs manual recovery.
 - **Failure panel**: prominently above the log, with escaped error details and a matching retry action.
 - **PR page**: existing workspaces are primary; creating another is a collapsed secondary disclosure. Creation is primary only when none exist.
 - **Action buttons**: start, prepare/rebuild, restart server, stop server, and refresh
@@ -53,6 +55,8 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 - **Log source switcher**: two native links inside one log panel, with current selection announced through `aria-current`; only the selected bounded log is loaded and refreshed. Setup is the default.
 - **Preview destination**: a small muted URL in Workspace details, visible before readiness; the primary Open workspace action remains reserved for ready servers.
 - **Editable environment**: labelled monospace multiline `NAME=value` control for non-secret recipe defaults and added workspace settings; busy state disables the fieldset and save button, values are escaped in HTML, other legacy overrides remain hidden. Omitted default names revert to recipe defaults; omitted added names are unset.
+- **Danger Zone**: isolated section on the detail page with explicit loss-of-uncommitted-and-untracked-work copy, an exact-workspace-ID confirmation field, and a destructive action. Deletion remains possible without JavaScript, is disabled while setup is busy, and never appears as a list-row action.
+- **Workspace favicon**: a small two-pane workspace mark served by the dashboard host. Use `--accent` blue for localhost and `--warning` gold for hosted origins so browser tabs signal the environment without relying on page text. The icon contains no workspace-specific data.
 
 ## Accessibility constraints
 
