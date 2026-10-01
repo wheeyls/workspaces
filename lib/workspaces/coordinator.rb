@@ -134,7 +134,7 @@ module Workspaces
     def publish_starting(id, restart)
       recipe = Recipe.new
       steps = recipe.for_operation(restart: restart).map do |step|
-        { 'key' => step['id'], 'label' => step['name'], 'state' => 'pending' }
+        { 'key' => step['id'], 'label' => step['name'], 'state' => 'pending', 'duration_seconds' => nil }
       end
       update(id, 'status' => 'preparing', 'message' => restart ? 'Restarting application' : 'Preparing workspace',
                  'steps' => steps,

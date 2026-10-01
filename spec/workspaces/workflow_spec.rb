@@ -6,6 +6,112 @@ RSpec.describe Workspaces::Workflow do
   let(:root) { Workspaces::Config.repo_root }
   let(:state) { Workspaces::StateStore.new(Workspaces::Config.state_file) }
 
+  describe 'step timing' do
+    let(:workspace) { double('workspace', id: 'timed-fixture', path: root) }
+    let(:backend) { instance_double(Workspaces::Backend, stop!: nil, reserve!: 30123, port: 30123) }
+    let(:runner) { instance_double(Workspaces::CommandRunner) }
+    let(:log) { StringIO.new }
+    let(:workflow) { described_class.new(workspace, log, state: state) }
+
+    before do
+      @clock = 100.0
+      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) { @clock }
+      allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
+      allow(Workspaces::CommandRunner).to receive(:new).with(root, log).and_return(runner)
+      allow(runner).to receive(:run!) do |command, **_options|
+        key = command.last.include?('setup') ? 'setup' : 'ready'
+        expect(state.get(workspace.id)['steps'].find { |step| step['key'] == key })
+          .to include('state' => 'active', 'duration_seconds' => nil)
+        @clock += key == 'setup' ? 0.1236 : 1.25
+      end
+      allow(backend).to receive(:start!) do
+        expect(state.get(workspace.id)['steps'][1]).to include('state' => 'active', 'duration_seconds' => nil)
+        @clock += 0.5
+      end
+      allow(backend).to receive(:ensure_alive!) { @clock += 0.25 }
+    end
+
+    it 'persists rounded durations including liveness checks and logs each terminal step once' do
+      expect(backend).to receive(:stop!) do
+        expect(state.get(workspace.id)['steps']).to all(include('state' => 'pending', 'duration_seconds' => nil))
+      end
+
+      expect(workflow.run!).to eq(30123)
+
+      steps = Workspaces::StateStore.new(Workspaces::Config.state_file).get(workspace.id)['steps']
+      expect(steps).to match([
+        include('key' => 'setup', 'state' => 'complete', 'duration_seconds' => 0.124),
+        include('key' => 'app', 'state' => 'complete', 'duration_seconds' => 0.5),
+        include('key' => 'ready', 'state' => 'complete', 'duration_seconds' => 1.5)
+      ])
+      expect(log.string.lines.grep(/\(\d+\.\d{3}s\)/)).to eq([
+        "==> Fixture setup complete (0.124s)\n",
+        "==> Fixture server complete (0.500s)\n",
+        "==> Fixture readiness complete (1.500s)\n"
+      ])
+    end
+
+    it 'records failed command time and leaves unexecuted steps pending without durations' do
+      error = RuntimeError.new('command failed')
+      allow(runner).to receive(:run!) { @clock += 2.3456; raise error }
+
+      expect { workflow.run! }.to raise_error { |raised| expect(raised).to equal(error) }
+
+      steps = state.get(workspace.id)['steps']
+      expect(steps.first).to include('state' => 'failed', 'duration_seconds' => 2.346)
+      expect(steps.drop(1)).to all(include('state' => 'pending', 'duration_seconds' => nil))
+      expect(log.string.lines.grep(/\(\d+\.\d{3}s\)/)).to eq(["==> Fixture setup failed (2.346s)\n"])
+      expect(backend).to have_received(:stop!).twice
+    end
+
+    it 'includes the liveness check in a failed readiness duration' do
+      allow(backend).to receive(:ensure_alive!) { @clock += 0.75; raise 'backend exited' }
+
+      expect { workflow.run! }.to raise_error(RuntimeError, 'backend exited')
+
+      expect(state.get(workspace.id)['steps'].last).to include('state' => 'failed', 'duration_seconds' => 2.0)
+      expect(log.string.lines.grep(/Fixture readiness (?:complete|failed)/))
+        .to eq(["==> Fixture readiness failed (2.000s)\n"])
+      expect(backend).to have_received(:stop!).twice
+    end
+
+    it 'records failed background launch time separately from pending readiness' do
+      allow(backend).to receive(:start!) { @clock += 0.0625; raise 'launch failed' }
+
+      expect { workflow.run! }.to raise_error(RuntimeError, 'launch failed')
+
+      expect(state.get(workspace.id)['steps'][1]).to include('state' => 'failed', 'duration_seconds' => 0.063)
+      expect(state.get(workspace.id)['steps'].last).to include('state' => 'pending', 'duration_seconds' => nil)
+      expect(log.string.lines.grep(/Fixture server (?:complete|failed)/))
+        .to eq(["==> Fixture server failed (0.063s)\n"])
+    end
+
+    it 'replaces previous timings on restart and measures only launch and readiness' do
+      state.set(workspace.id, 'steps' => %w(setup app ready).map do |key|
+        { 'key' => key, 'state' => 'complete', 'duration_seconds' => 99.0 }
+      end)
+      expect(backend).to receive(:stop!) do
+        expect(state.get(workspace.id)['steps']).to match([
+          include('key' => 'app', 'state' => 'pending', 'duration_seconds' => nil),
+          include('key' => 'ready', 'state' => 'pending', 'duration_seconds' => nil)
+        ])
+      end
+      allow(backend).to receive(:start!) { @clock += 0.5 }
+
+      workflow.run!(restart: true)
+
+      expect(state.get(workspace.id)['steps']).to match([
+        include('key' => 'app', 'state' => 'complete', 'duration_seconds' => 0.5),
+        include('key' => 'ready', 'state' => 'complete', 'duration_seconds' => 1.5)
+      ])
+      expect(runner).to have_received(:run!).once
+      expect(log.string.lines.grep(/\(\d+\.\d{3}s\)/)).to eq([
+        "==> Fixture server complete (0.500s)\n",
+        "==> Fixture readiness complete (1.500s)\n"
+      ])
+    end
+  end
+
   def install_recipe
     %w(server.rb ready.rb).each { |file| FileUtils.cp(File.join(__dir__, 'fixtures', file), root.join(file)) }
     root.join('.workspaces.yml').write(YAML.dump('version' => 1, 'steps' => fixture_steps))
