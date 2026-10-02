@@ -124,6 +124,57 @@ RSpec.describe Workspaces::Cli do
     expect(JSON.parse(stdout)).to eq([])
   end
 
+  it 'exec runs command with workspace Bundler env even under source Bundler env' do
+    source_root = Workspaces::Config.home.join('source-bundle')
+    write_path_marker_bundle(root: source_root, marker: 'source', include_workspaces: true)
+
+    repository
+    workspace_root = Workspaces::Config.worktrees_dir.join('bundle-fixture-1234')
+    FileUtils.mkdir_p(workspace_root)
+    write_path_marker_bundle(root: workspace_root, marker: 'workspace')
+
+    File.write(workspace_root.join('.git'), "gitdir: #{Workspaces::Config.repo_root.join('.git')}\n")
+    output_file = workspace_root.join('cli-marker.txt')
+    metadata = {
+      'version' => 1,
+      'id' => 'bundle-fixture-1234',
+      'branch' => 'workspaces/bundle-fixture-1234',
+      'source' => { 'kind' => 'branch', 'ref' => 'main' },
+      'created_at' => Time.now.utc.iso8601,
+      'repository_path' => Workspaces::Config.repo_root.realpath.to_s
+    }
+    File.write(workspace_root.join('.workspace.json'), JSON.pretty_generate(metadata), perm: 0o600)
+
+    source_env = {
+      'BUNDLE_GEMFILE' => source_root.join('Gemfile').to_s,
+      'BUNDLE_LOCKFILE' => source_root.join('Gemfile.lock').to_s,
+      'BUNDLER_ORIG_BUNDLE_GEMFILE' => source_root.join('Gemfile').to_s,
+      'BUNDLER_ORIG_BUNDLE_LOCKFILE' => source_root.join('Gemfile.lock').to_s,
+      'BUNDLER_ORIG_GEM_PATH' => '/tmp/orig-gem-path',
+      'APP_KEEP' => 'yes',
+      'APP_DELETE' => 'remove-me'
+    }
+    stdout, stderr, status = Open3.capture3(
+      source_env, 'bundle', 'exec', 'ruby', '-e', "require 'workspaces'; exit Workspaces::Cli.run(ARGV)",
+      'exec', 'bundle-fixture-1234', '--', *bundled_path_marker_command(output_path: output_file),
+      chdir: source_root.to_s
+    )
+
+    expect(status).to be_success, stderr
+    expect(output_file).to exist
+    cli_output = output_file.read
+    expect(stdout).to include('marker=workspace')
+    expect(cli_output).to include('marker=workspace')
+    expect(cli_output).to include('nested=workspace')
+    expect(cli_output).to include("gemfile=#{workspace_root.join('Gemfile')}")
+    expect(cli_output).to include("lockfile=#{workspace_root.join('Gemfile.lock')}")
+    expect(cli_output).to include('app_keep=yes')
+    expect(cli_output).to include('app_delete=remove-me')
+    expect(cli_output).not_to include('marker=source')
+    expect(cli_output).not_to include(source_root.join('Gemfile').to_s)
+    expect(cli_output).not_to include(source_root.join('Gemfile.lock').to_s)
+  end
+
   def write_tls_pair(directory, cert_path: File.join(directory, 'cert.pem'), key_path: File.join(directory, 'key.pem'))
     generate_tls_pair(cert_path: cert_path, key_path: key_path)
     [cert_path, key_path]

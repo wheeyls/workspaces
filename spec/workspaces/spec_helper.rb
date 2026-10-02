@@ -57,6 +57,68 @@ module WorkspaceFixtures
     git('-c', 'core.hooksPath=/dev/null', 'commit', '-m', 'Fixture baseline')
     root
   end
+
+  def write_path_marker_bundle(root:, marker:, include_workspaces: false)
+    root.mkpath
+    gem_dir = root.join('path_marker')
+    FileUtils.mkdir_p(gem_dir.join('lib'))
+    File.write(gem_dir.join('path_marker.gemspec'), <<~RUBY)
+      Gem::Specification.new do |spec|
+        spec.name = 'path_marker'
+        spec.version = '0.0.1'
+        spec.summary = 'path marker'
+        spec.authors = ['fixtures']
+        spec.files = ['lib/path_marker.rb']
+        spec.require_paths = ['lib']
+      end
+    RUBY
+    File.write(gem_dir.join('lib/path_marker.rb'), <<~RUBY)
+      module PathMarker
+        def self.marker
+          #{marker.inspect}
+        end
+      end
+    RUBY
+    File.write(root.join('Gemfile'), <<~RUBY)
+      source 'https://rubygems.org'
+      gem 'path_marker', path: './path_marker'
+      #{"gem 'workspaces', path: #{File.expand_path('../..', __dir__).inspect}" if include_workspaces}
+    RUBY
+
+    env = Workspaces::ChildEnv.for_workspace(workspace_path: root)
+
+    output, status = Open3.capture2e(env, 'bundle', 'lock', '--local', chdir: root.to_s, unsetenv_others: true)
+    raise "bundle lock failed for #{root}:\n#{output}" unless status.success?
+
+    root
+  end
+
+  def bundled_path_marker_command(output_path: nil)
+    nested = "require 'bundler/setup'; require 'path_marker'; puts 'nested=' + PathMarker.marker"
+    statements = [
+      "require 'bundler/setup'",
+      "require 'path_marker'",
+      "puts 'marker=' + PathMarker.marker",
+      "puts 'gemfile=' + ENV.fetch('BUNDLE_GEMFILE', '<unset>')",
+      "puts 'lockfile=' + ENV.fetch('BUNDLE_LOCKFILE', '<unset>')",
+      "puts 'app_keep=' + ENV.fetch('APP_KEEP', '<unset>')",
+      "puts 'app_delete=' + (ENV.key?('APP_DELETE') ? ENV['APP_DELETE'] : '<unset>')",
+      "puts 'bundle_credential=' + ENV.fetch('BUNDLE_RUBYGEMS__PKG__GITHUB__COM', '<unset>')",
+      "print Bundler.with_original_env { IO.popen(['bundle', 'exec', 'ruby', '-e', #{nested.inspect}]).read }"
+    ]
+    if output_path
+      report = [
+        "'marker=' + PathMarker.marker",
+        "'gemfile=' + ENV.fetch('BUNDLE_GEMFILE', '<unset>')",
+        "'lockfile=' + ENV.fetch('BUNDLE_LOCKFILE', '<unset>')",
+        "'app_keep=' + ENV.fetch('APP_KEEP', '<unset>')",
+        "'app_delete=' + (ENV.key?('APP_DELETE') ? ENV['APP_DELETE'] : '<unset>')",
+        "IO.popen(['ruby', '-e', #{nested.inspect}]).read.strip"
+      ].join(', ')
+      statements << "File.write(#{output_path.to_s.inspect}, [#{report}].join(\"\\n\") + \"\\n\")"
+    end
+    ['ruby', '-e', statements.join('; ')]
+  end
 end
 
 RSpec.configure { |config| config.include WorkspaceFixtures, :workspace_tool }
