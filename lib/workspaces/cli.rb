@@ -6,6 +6,7 @@ require_relative 'registry'
 require_relative 'coordinator'
 require_relative 'front_door'
 require_relative 'tls'
+require_relative 'child_env'
 
 module Workspaces
   class Cli
@@ -149,7 +150,9 @@ module Workspaces
       end
 
       registry.with_lock(id) do |workspace|
-        pid = Process.spawn([argv.first, argv.first], *argv.drop(1), chdir: workspace.path.to_s)
+        child_env = ChildEnv.for_workspace(workspace_path: workspace.path)
+        pid = Process.spawn(child_env, [argv.first, argv.first], *argv.drop(1),
+                            chdir: workspace.path.to_s, unsetenv_others: true)
         _, status = Process.wait2(pid)
         status.exitstatus || (128 + status.termsig)
       end

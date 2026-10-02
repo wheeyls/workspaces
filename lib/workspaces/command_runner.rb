@@ -1,5 +1,6 @@
 require 'open3'
 require 'timeout'
+require_relative 'child_env'
 
 module Workspaces
   class CommandRunner
@@ -12,7 +13,9 @@ module Workspaces
 
     def run!(command, env:, timeout:)
       executable = [command.first, command.first]
-      Open3.popen2e(env, executable, *command.drop(1), chdir: @path.to_s, pgroup: true) do |input, output, child|
+      child_env = ChildEnv.for_workspace(workspace_path: @path, extra_env: env)
+      Open3.popen2e(child_env, executable, *command.drop(1), chdir: @path.to_s, pgroup: true,
+                    unsetenv_others: true) do |input, output, child|
         input.close
         output.set_encoding(Encoding::UTF_8, invalid: :replace, undef: :replace)
         run_child(output, child, timeout)

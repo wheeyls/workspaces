@@ -29,4 +29,45 @@ RSpec.describe Workspaces::CommandRunner do
     expect(file.string).to include('[FILTERED]')
     expect(file.string).not_to include('top-secret-token')
   end
+
+  it 'resolves path gems from the managed workspace under inherited Bundler env' do
+    source_root = Workspaces::Config.home.join('source-bundle')
+    workspace_root = Workspaces::Config.home.join('workspace-bundle')
+    write_path_marker_bundle(root: source_root, marker: 'source')
+    write_path_marker_bundle(root: workspace_root, marker: 'workspace')
+
+    source_gemfile = source_root.join('Gemfile').to_s
+    source_lockfile = source_root.join('Gemfile.lock').to_s
+    workspace_gemfile = workspace_root.join('Gemfile').to_s
+    workspace_lockfile = workspace_root.join('Gemfile.lock').to_s
+
+    runner = described_class.new(workspace_root, log)
+    command = bundled_path_marker_command
+    env = {
+      'BUNDLE_GEMFILE' => source_gemfile,
+      'BUNDLE_LOCKFILE' => source_lockfile,
+      'BUNDLER_ORIG_BUNDLE_GEMFILE' => source_gemfile,
+      'BUNDLER_ORIG_BUNDLE_LOCKFILE' => source_lockfile,
+      'BUNDLER_ORIG_GEM_PATH' => '/tmp/orig-gem-path',
+      'BUNDLE_RUBYGEMS__PKG__GITHUB__COM' => 'fixture-credential',
+      'APP_KEEP' => 'yes',
+      'APP_DELETE' => nil
+    }
+
+    ClimateControl.modify(env) do
+      runner.run!(command, env: { 'APP_KEEP' => 'yes', 'APP_DELETE' => nil }, timeout: 20)
+    end
+
+    expect(log.string).to include('marker=workspace')
+    expect(log.string).to include('nested=workspace')
+    expect(log.string).to include("gemfile=#{workspace_gemfile}")
+    expect(log.string).to include("lockfile=#{workspace_lockfile}")
+    expect(log.string).to include('app_keep=yes')
+    expect(log.string).to include('bundle_credential=fixture-credential')
+    expect(log.string).to include('app_delete=<unset>')
+    expect(log.string).not_to include('marker=source')
+    expect(log.string).not_to include("gemfile=#{source_gemfile}")
+    expect(log.string).not_to include("lockfile=#{source_lockfile}")
+    expect(log.string).not_to include('BUNDLER_ORIG_')
+  end
 end

@@ -4,6 +4,7 @@ require 'time'
 require_relative 'config'
 require_relative 'state_store'
 require_relative 'port_allocator'
+require_relative 'child_env'
 
 module Workspaces
   class Backend
@@ -61,8 +62,10 @@ module Workspaces
 
     def spawn_command(workspace, command, env)
       File.open(Config.backend_log_path(workspace_id), 'a') do |file|
-        Process.spawn(env, [command.first, command.first], *command.drop(1),
-                      chdir: workspace.path.to_s, in: File::NULL, out: file, err: file, pgroup: true)
+        child_env = ChildEnv.for_workspace(workspace_path: workspace.path, extra_env: env)
+        Process.spawn(child_env, [command.first, command.first], *command.drop(1),
+                      chdir: workspace.path.to_s, in: File::NULL, out: file, err: file, pgroup: true,
+                      unsetenv_others: true)
       end
     end
 
