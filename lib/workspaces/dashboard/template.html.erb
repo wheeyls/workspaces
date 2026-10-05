@@ -32,25 +32,22 @@
     </div>
     <div class="workspace-settings" aria-labelledby="environment-overrides">
       <h3 id="environment-overrides">Editable environment</h3>
-      <p class="muted">One NAME=value per line. These non-secret settings start from <code>default_editable_env</code> in the trusted recipe. Edit values to customize this workspace; remove a line to restore its default.</p>
-      <p class="muted">Do not enter secrets: editor values appear in the dashboard and status API. Add other non-secret names as needed. Previously saved values outside the editor remain hidden and unchanged.</p>
       <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" data-environment-form data-environment-presets="<%= escape(environment_presets_json) %>">
         <fieldset class="env-fieldset" data-environment-fieldset <%= 'disabled' if @presentation['busy'] %>>
           <legend class="env-legend">Workspace settings</legend>
           <% unless environment_presets.empty? %>
             <div data-preset-controls hidden>
               <p class="env-input-label" id="environment-preset-label">Preset</p>
-              <div class="env-preset-buttons" role="group" aria-labelledby="environment-preset-label" aria-describedby="environment-preset-help editable-env-help">
+              <div class="env-preset-buttons" role="group" aria-labelledby="environment-preset-label" aria-describedby="environment-preset-help">
                 <% environment_presets.each_key do |name| %>
                   <button type="button" class="button button--subtle env-preset-button" data-environment-preset="<%= escape(name) %>" aria-pressed="false"><%= escape(name) %></button>
                 <% end %>
               </div>
-              <p class="muted" id="environment-preset-help">Choosing a preset replaces your current draft in the editor. Changes are local until you use Save &amp; restart.</p>
+              <p class="muted" id="environment-preset-help">Select a preset, then Save &amp; restart to apply.</p>
             </div>
           <% end %>
           <label class="env-input-label" for="editable-env">Environment variables</label>
-          <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="editable-env-help"><%= escape(editable_environment_text) %></textarea>
-          <p class="muted" id="editable-env-help">Values may contain =. Blank lines are ignored. Names are case-sensitive and cannot repeat.</p>
+          <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"><%= escape(editable_environment_text) %></textarea>
         </fieldset>
         <div class="env-actions">
           <button class="button button--primary" data-env-submit <%= 'disabled' if @presentation['busy'] %>>Save &amp; restart</button>
