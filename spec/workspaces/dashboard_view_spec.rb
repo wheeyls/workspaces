@@ -100,7 +100,7 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).not_to include('SECRET_TOKEN=')
   end
 
-  it 'renders escaped environment presets as options and JSON data for client-side draft fill' do
+  it 'renders escaped environment preset buttons and JSON data for client-side draft fill' do
     html = described_class.render(snapshot.merge(
                                   'environment_presets' => {
                                     '<Admin>' => { 'UE_APP' => 'admin', 'ROUTING_SUBDOMAIN' => 'admin' },
@@ -108,8 +108,9 @@ RSpec.describe Workspaces::DashboardView do
                                   }
                                 ))
 
-    expect(html).to include('<option value="&lt;Admin&gt;">&lt;Admin&gt;</option>')
-    expect(html).to include('<option value="Vendor">Vendor</option>')
+    expect(html).to include('role="group" aria-labelledby="environment-preset-label"')
+    expect(html).to include('type="button" class="button button--subtle env-preset-button" data-environment-preset="&lt;Admin&gt;" aria-pressed="false"')
+    expect(html).to include('type="button" class="button button--subtle env-preset-button" data-environment-preset="Vendor" aria-pressed="false"')
     expect(html).to include('data-preset-controls hidden')
     expect(html).to include('data-environment-presets="')
     expect(html).to include('&quot;&lt;Admin&gt;&quot;')

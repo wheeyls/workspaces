@@ -39,13 +39,12 @@
           <legend class="env-legend">Workspace settings</legend>
           <% unless environment_presets.empty? %>
             <div data-preset-controls hidden>
-              <label class="env-input-label" for="environment-preset">Preset</label>
-              <select id="environment-preset" class="env-preset-select" data-environment-preset aria-describedby="environment-preset-help editable-env-help">
-                <option value="">Select a preset…</option>
+              <p class="env-input-label" id="environment-preset-label">Preset</p>
+              <div class="env-preset-buttons" role="group" aria-labelledby="environment-preset-label" aria-describedby="environment-preset-help editable-env-help">
                 <% environment_presets.each_key do |name| %>
-                  <option value="<%= escape(name) %>"><%= escape(name) %></option>
+                  <button type="button" class="button button--subtle env-preset-button" data-environment-preset="<%= escape(name) %>" aria-pressed="false"><%= escape(name) %></button>
                 <% end %>
-              </select>
+              </div>
               <p class="muted" id="environment-preset-help">Choosing a preset replaces your current draft in the editor. Changes are local until you use Save &amp; restart.</p>
             </div>
           <% end %>
