@@ -5,7 +5,7 @@ RSpec.describe 'dashboard scripts' do
   let(:app_js) { File.read(File.join(__dir__, '../../lib/workspaces/dashboard/app.js')) }
   let(:environment_js) { File.read(File.join(__dir__, '../../lib/workspaces/dashboard/environment.js')) }
 
-  it 'executes environment preset flow with explicit replacement, no submit on select, and busy disablement' do
+  it 'executes environment preset button flow with explicit replacement, persistent selected state, no submit, and busy disablement' do
     script = <<~'NODE'
       const fs = require('node:fs');
       const vm = require('node:vm');
@@ -87,24 +87,6 @@ RSpec.describe 'dashboard scripts' do
 
       class Button extends Node {
         constructor(opts = {}) { super('button', opts); }
-      }
-
-      class OptionNode extends Node {
-        constructor(value, text) { super('option'); this.value = value; this.textContent = text; }
-      }
-
-      class Select extends Node {
-        constructor(opts = {}) {
-          super('select', opts);
-          this.options = [];
-          this.value = opts.value || '';
-        }
-        addOption(value, text) {
-          const option = new OptionNode(value, text);
-          this.options.push(option);
-          this.appendChild(option);
-          return option;
-        }
       }
 
       class Document {
@@ -207,13 +189,23 @@ RSpec.describe 'dashboard scripts' do
       }));
       const envFieldset = document.register(new Node('fieldset', { attributes: { 'data-environment-fieldset': '' } }));
       const presetGroup = document.register(new Node('div', { hidden: true, attributes: { 'data-preset-controls': '' } }));
-      const preset = document.register(new Select({ id: 'environment-preset', attributes: { 'data-environment-preset': '' } }));
-      preset.addOption('', 'Select a preset…');
-      preset.addOption('Alpha', 'Alpha');
-      preset.addOption('Beta', 'Beta');
+      const alphaPreset = document.register(new Button({
+        id: 'environment-preset-alpha',
+        attributes: { 'data-environment-preset': 'Alpha', 'aria-pressed': 'false', type: 'button' },
+        className: 'button button--subtle env-preset-button',
+        textContent: 'Alpha'
+      }));
+      alphaPreset.dataset.environmentPreset = 'Alpha';
+      const betaPreset = document.register(new Button({
+        id: 'environment-preset-beta',
+        attributes: { 'data-environment-preset': 'Beta', 'aria-pressed': 'false', type: 'button' },
+        className: 'button button--subtle env-preset-button',
+        textContent: 'Beta'
+      }));
+      betaPreset.dataset.environmentPreset = 'Beta';
       const editor = document.register(new Node('textarea', { id: 'editable-env', value: 'UE_APP=www\nROUTING_SUBDOMAIN=www' }));
       envFieldset.append(presetGroup);
-      presetGroup.append(preset);
+      presetGroup.append(alphaPreset, betaPreset);
       envFieldset.append(editor);
       const envSubmit = document.register(new Button({ attributes: { 'data-env-submit': '' } }));
       const envStatus = document.register(new Node('p', { id: 'environment-status' }));
@@ -310,38 +302,70 @@ RSpec.describe 'dashboard scripts' do
 
       const result = {};
       result.presetGroupVisibleAfterInit = !presetGroup.hidden;
+      result.pressedAfterInit = {
+        alpha: alphaPreset.attributes['aria-pressed'],
+        beta: betaPreset.attributes['aria-pressed']
+      };
 
       const submitEvents = [];
       envForm.addEventListener('submit', (event) => submitEvents.push(event.type));
 
-      preset.value = 'Alpha';
-      preset.dispatchEvent({ type: 'change', target: preset });
+      alphaPreset.dispatchEvent({ type: 'click', target: alphaPreset });
       result.editorAfterPreset = editor.value;
       result.statusAfterPreset = envStatus.textContent;
       result.submitCountAfterPreset = submitEvents.length;
+      result.pressedAfterPreset = {
+        alpha: alphaPreset.attributes['aria-pressed'],
+        beta: betaPreset.attributes['aria-pressed']
+      };
 
       editor.value = 'UE_APP=custom';
       editor.dispatchEvent({ type: 'input', target: editor });
       result.statusAfterEdit = envStatus.textContent;
+      result.pressedAfterManualEdit = {
+        alpha: alphaPreset.attributes['aria-pressed'],
+        beta: betaPreset.attributes['aria-pressed']
+      };
+
+      betaPreset.dispatchEvent({ type: 'click', target: betaPreset });
+      result.editorAfterSwitchingPreset = editor.value;
+      result.pressedAfterSwitchingPreset = {
+        alpha: alphaPreset.attributes['aria-pressed'],
+        beta: betaPreset.attributes['aria-pressed']
+      };
 
       context.window.WorkspaceEnvironment.toggleBusy(true);
-      preset.value = 'Beta';
-      preset.dispatchEvent({ type: 'change', target: preset });
+      alphaPreset.dispatchEvent({ type: 'click', target: alphaPreset });
       result.editorAfterBusyPresetAttempt = editor.value;
-      result.presetDisabledWhenBusy = preset.disabled;
+      result.presetDisabledWhenBusy = alphaPreset.disabled && betaPreset.disabled;
       result.editorDisabledWhenBusy = envFieldset.disabled;
       result.saveDisabledWhenBusy = envSubmit.disabled;
 
       context.window.WorkspaceEnvironment.toggleBusy(false);
+      result.presetEnabledAfterBusy = !alphaPreset.disabled && !betaPreset.disabled;
 
       document.activeElement = editor;
       context.window.WorkspaceEnvironment.syncFromSnapshot({ editable_environment: { ROUTING_SUBDOMAIN: 'www', UE_APP: 'www' } });
-      result.presetAfterSyncWhileFocused = preset.value;
+      result.pressedAfterSyncWhileFocused = {
+        alpha: alphaPreset.attributes['aria-pressed'],
+        beta: betaPreset.attributes['aria-pressed']
+      };
 
       document.activeElement = null;
       editor.value = 'UE_APP=custom';
       context.window.WorkspaceEnvironment.syncFromSnapshot({ editable_environment: { ROUTING_SUBDOMAIN: 'www', UE_APP: 'www' } });
       result.editorAfterPollingSyncMismatch = editor.value;
+      result.pressedAfterPollingSyncMismatch = {
+        alpha: alphaPreset.attributes['aria-pressed'],
+        beta: betaPreset.attributes['aria-pressed']
+      };
+
+      editor.value = 'UE_APP=www\nROUTING_SUBDOMAIN=www';
+      context.window.WorkspaceEnvironment.syncFromSnapshot({ editable_environment: { ROUTING_SUBDOMAIN: 'www', UE_APP: 'www' } });
+      result.pressedAfterPollingSyncExact = {
+        alpha: alphaPreset.attributes['aria-pressed'],
+        beta: betaPreset.attributes['aria-pressed']
+      };
 
       result.scheduledDelays = pendingTimers.map((item) => item.delay);
       process.stdout.write(JSON.stringify(result));
@@ -352,16 +376,24 @@ RSpec.describe 'dashboard scripts' do
     result = JSON.parse(output)
 
     expect(result['presetGroupVisibleAfterInit']).to eq(true)
+    expect(result['pressedAfterInit']).to eq({ 'alpha' => 'false', 'beta' => 'false' })
     expect(result['editorAfterPreset']).to eq("UE_APP=alpha\nROUTING_SUBDOMAIN=alpha")
     expect(result['statusAfterPreset']).to eq('Preset loaded into draft only. Use Save & restart to apply changes.')
     expect(result['submitCountAfterPreset']).to eq(0)
+    expect(result['pressedAfterPreset']).to eq({ 'alpha' => 'true', 'beta' => 'false' })
     expect(result['statusAfterEdit']).to eq('Draft updated locally and not saved yet. Use Save & restart to apply changes.')
-    expect(result['editorAfterBusyPresetAttempt']).to eq('UE_APP=custom')
+    expect(result['pressedAfterManualEdit']).to eq({ 'alpha' => 'false', 'beta' => 'false' })
+    expect(result['editorAfterSwitchingPreset']).to eq('UE_APP=beta')
+    expect(result['pressedAfterSwitchingPreset']).to eq({ 'alpha' => 'false', 'beta' => 'true' })
+    expect(result['editorAfterBusyPresetAttempt']).to eq('UE_APP=beta')
     expect(result['presetDisabledWhenBusy']).to eq(true)
     expect(result['editorDisabledWhenBusy']).to eq(true)
     expect(result['saveDisabledWhenBusy']).to eq(true)
-    expect(result['presetAfterSyncWhileFocused']).to eq('Beta')
+    expect(result['presetEnabledAfterBusy']).to eq(true)
+    expect(result['pressedAfterSyncWhileFocused']).to eq({ 'alpha' => 'false', 'beta' => 'true' })
     expect(result['editorAfterPollingSyncMismatch']).to eq('UE_APP=custom')
+    expect(result['pressedAfterPollingSyncMismatch']).to eq({ 'alpha' => 'false', 'beta' => 'true' })
+    expect(result['pressedAfterPollingSyncExact']).to eq({ 'alpha' => 'false', 'beta' => 'true' })
     expect(result['scheduledDelays']).to include(1000)
   end
 
