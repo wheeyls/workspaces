@@ -93,7 +93,8 @@ module Workspaces
         'steps' => entry.fetch('steps', []),
         'log_tail' => include_log ? log_tail(id, log) : '', 'log_source' => log, 'port' => entry['port'],
         'environment_keys' => environment_keys(id),
-        'editable_environment' => editable_environment(id)
+        'editable_environment' => editable_environment(id),
+        'environment_presets' => environment_presets
       }
     end
 
@@ -217,6 +218,13 @@ module Workspaces
     def editable_environment(id)
       EnvironmentOverrides.new(id).editable_values(Recipe.new.default_editable_env)
     rescue Recipe::Invalid, EnvironmentOverrides::Invalid
+      {}
+    end
+
+    def environment_presets
+      recipe = Recipe.new
+      recipe.environment_presets.transform_values { |overlay| recipe.default_editable_env.merge(overlay) }
+    rescue Recipe::Invalid
       {}
     end
 

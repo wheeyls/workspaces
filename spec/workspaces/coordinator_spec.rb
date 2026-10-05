@@ -5,6 +5,89 @@ RSpec.describe Workspaces::Coordinator do
 
   let(:workspace) { Workspaces::Registry.new.create(branch: 'main') }
 
+  describe 'snapshot environment presets' do
+    let(:defaults) { { 'APP_VARIANT' => 'www', 'ROUTING_SUBDOMAIN' => 'www', 'DEMO_MODE' => 'false' } }
+    let(:presets) do
+      { 'Seller preview' => { 'APP_VARIANT' => 'seller', 'ROUTING_SUBDOMAIN' => 'my' },
+        'Demo preview' => { 'DEMO_MODE' => 'true' }, 'Default preview' => {} }
+    end
+
+    before do
+      path = Workspaces::Config.repo_root.join('.workspaces.yml')
+      recipe = YAML.safe_load(path.read)
+      recipe.merge!('default_editable_env' => defaults, 'environment_presets' => presets,
+                    'env' => { 'SERVICE_TOKEN' => 'recipe-private-value' })
+      File.write(path, YAML.dump(recipe))
+    end
+
+    it 'completes each sparse preset with defaults without changing the editable environment' do
+      snapshot = described_class.new.snapshot(workspace.id)
+
+      expect(snapshot.fetch('environment_presets')).to eq(
+        'Seller preview' => defaults.merge('APP_VARIANT' => 'seller', 'ROUTING_SUBDOMAIN' => 'my'),
+        'Demo preview' => defaults.merge('DEMO_MODE' => 'true'),
+        'Default preview' => defaults
+      )
+      expect(snapshot.fetch('editable_environment')).to eq(defaults)
+      expect(snapshot.to_json).not_to include('recipe-private-value')
+      expect(Workspaces::Config.home.join('environment')).not_to exist
+    end
+
+    it 'ignores saved overrides in presets and leaves legacy and editable storage unchanged' do
+      id = workspace.id
+      overrides = Workspaces::EnvironmentOverrides.new(id)
+      overrides.replace_editable("DEMO_MODE=true\nCUSTOM_FLAG=custom\n", defaults: defaults)
+      overrides.apply_patch(set: { 'APP_VARIANT' => 'legacy', 'SERVICE_TOKEN' => 'legacy-private-value',
+                                   'HIDDEN_SETTING' => 'hidden-legacy-value' }, remove: [])
+      paths = Workspaces::Config.home.join('environment').children
+      stored = paths.to_h { |path| [path, [path.read, path.mtime]] }
+      coordinator = described_class.new
+      expect(coordinator).not_to receive(:start)
+      expect(coordinator).not_to receive(:restart)
+
+      snapshot = coordinator.snapshot(id)
+
+      expect(snapshot.fetch('environment_presets')).to eq(
+        'Seller preview' => defaults.merge('APP_VARIANT' => 'seller', 'ROUTING_SUBDOMAIN' => 'my'),
+        'Demo preview' => defaults.merge('DEMO_MODE' => 'true'),
+        'Default preview' => defaults
+      )
+      expect(snapshot.fetch('editable_environment')).to eq(
+        defaults.merge('APP_VARIANT' => 'legacy', 'DEMO_MODE' => 'true', 'CUSTOM_FLAG' => 'custom')
+      )
+      expect(snapshot.to_json).not_to include('legacy-private-value', 'hidden-legacy-value', 'recipe-private-value')
+      expect(paths.to_h { |path| [path, [path.read, path.mtime]] }).to eq(stored)
+      expect(Workspaces::Config.home.join('environment').children).to match_array(paths)
+    end
+
+    it 'reads presets from the trusted source recipe rather than the workspace checkout' do
+      File.write(workspace.path.join('.workspaces.yml'), YAML.dump('version' => 'untrusted'))
+
+      expect(described_class.new.snapshot(workspace.id).fetch('environment_presets')).to include(
+        'Demo preview' => defaults.merge('DEMO_MODE' => 'true')
+      )
+    end
+
+    it 'returns no presets for older recipes while retaining editable defaults' do
+      path = Workspaces::Config.repo_root.join('.workspaces.yml')
+      recipe = YAML.safe_load(path.read)
+      recipe.delete('environment_presets')
+      File.write(path, YAML.dump(recipe))
+
+      expect(described_class.new.snapshot(workspace.id)).to include(
+        'environment_presets' => {}, 'editable_environment' => defaults
+      )
+    end
+
+    it 'returns empty environment maps when the trusted recipe is invalid' do
+      File.write(Workspaces::Config.repo_root.join('.workspaces.yml'), YAML.dump('version' => 'invalid'))
+
+      expect(described_class.new.snapshot(workspace.id)).to include(
+        'environment_presets' => {}, 'editable_environment' => {}
+      )
+    end
+  end
+
   it 'seeds nil durations before prepare and restart workers and preserves persisted timings in snapshots' do
     state = Workspaces::StateStore.new(Workspaces::Config.state_file)
     backend = instance_double(Workspaces::Backend, running?: true)
