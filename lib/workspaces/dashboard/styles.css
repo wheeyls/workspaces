@@ -295,18 +295,20 @@ fieldset:disabled {
   margin: 0;
 }
 
-.env-preset-select {
-  max-width: 100%;
-  padding: var(--space-2);
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--space-1);
+.env-preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
-.env-preset-select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.env-preset-button {
+  min-block-size: 34px;
+  padding-inline: var(--space-3);
+}
+
+.env-preset-button[aria-pressed='true'] {
+  border-color: color-mix(in oklab, var(--success) 55%, var(--border));
+  background: color-mix(in oklab, var(--success) 22%, transparent);
 }
 
 .button {
