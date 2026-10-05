@@ -49,12 +49,14 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 - **Failure panel**: prominently above the log, with escaped error details and a matching retry action.
 - **PR page**: existing workspaces are primary; creating another is a collapsed secondary disclosure. Creation is primary only when none exist.
 - **Action buttons**: start, prepare/rebuild, restart server, stop server, and refresh
+- **Actions & settings panel**: status-adjacent panel that combines routine lifecycle controls, Open workspace, Refresh status, PR update messaging, and editable environment settings so routine operations stay in one keyboard-reachable region.
 - **Open workspace**: success-styled link available when the server is ready
 - **Lifecycle controls**: disabled while busy; helper text distinguishes rebuilding from server-only restart
 - **Bounded log panel**: monospace text, fixed max height, manual-scroll-safe updates
 - **Log source switcher**: two native links inside one log panel, with current selection announced through `aria-current`; only the selected bounded log is loaded and refreshed. Setup is the default.
 - **Preview destination**: a small muted URL in Workspace details, visible before readiness; the primary Open workspace action remains reserved for ready servers.
 - **Editable environment**: labelled monospace multiline `NAME=value` control for non-secret recipe defaults and added workspace settings; busy state disables the fieldset and save button, values are escaped in HTML, other legacy overrides remain hidden. Omitted default names revert to recipe defaults; omitted added names are unset.
+- **Environment presets (JS-enhanced)**: optional preset selector is hidden by default and revealed only when JavaScript is active and presets exist. Selecting a preset replaces the entire draft editor content and announces unsaved state without submitting. Draft edits remain local until Save & restart.
 - **Danger Zone**: isolated section on the detail page with explicit loss-of-uncommitted-and-untracked-work copy, an exact-workspace-ID confirmation field, and a destructive action. Deletion remains possible without JavaScript, is disabled while setup is busy, and never appears as a list-row action.
 - **Workspace favicon**: a small two-pane workspace mark served by the dashboard host. Use `--accent` blue for localhost and `--warning` gold for hosted origins so browser tabs signal the environment without relying on page text. The icon contains no workspace-specific data.
 

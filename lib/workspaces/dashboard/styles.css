@@ -270,6 +270,45 @@ fieldset:disabled {
   align-items: start;
 }
 
+.controls-panel h2,
+.controls-panel h3 {
+  margin: 0;
+}
+
+.workspace-actions-group,
+.workspace-settings {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.workspace-settings {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
+.workspace-actions {
+  margin-block-start: 0;
+}
+
+.workspace-actions .button,
+.workspace-actions form {
+  margin: 0;
+}
+
+.env-preset-select {
+  max-width: 100%;
+  padding: var(--space-2);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--space-1);
+}
+
+.env-preset-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .button {
   display: inline-flex;
   justify-content: center;
