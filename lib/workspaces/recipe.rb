@@ -7,13 +7,14 @@ module Workspaces
     class Invalid < ArgumentError; end
     RESERVED_ENV = %w(WORKSPACE_ID WORKSPACE_PATH WORKSPACE_REPO_ROOT WORKSPACE_PORT WORKSPACE_URL
                       WORKSPACE_HOST WORKSPACE_CACHE_DIR WORKSPACE_RUN_ID).freeze
-    attr_reader :steps, :environment, :default_editable_env
+    attr_reader :steps, :environment, :default_editable_env, :environment_presets
 
     def initialize(root: Config.repo_root)
       @root = root
       document = YAML.safe_load(root.join('.workspaces.yml').read, aliases: false)
       validate_document!(document)
       @default_editable_env = validate_editable_env!(document.fetch('default_editable_env', {}))
+      @environment_presets = validate_environment_presets!(document.fetch('environment_presets', {}))
       @environment = validate_env!(document.fetch('env', {}))
       @steps = document.fetch('steps').map { |step| validate_step!(step) }
       validate_editable_overlap!
@@ -49,7 +50,7 @@ module Workspaces
         raise Invalid,
               'Configuration must be a mapping with version: 1'
       end
-      unknown_keys!(document, %w(version env default_editable_env steps))
+      unknown_keys!(document, %w(version env default_editable_env environment_presets steps))
       raise Invalid, 'steps must be a nonempty array' unless document['steps'].is_a?(Array) && !document['steps'].empty?
     end
 
@@ -109,20 +110,35 @@ module Workspaces
       values
     end
 
-    def validate_editable_env!(values)
-      raise Invalid, 'default_editable_env must be a mapping' unless values.is_a?(Hash)
+    def validate_editable_env!(values, setting: 'default_editable_env')
+      raise Invalid, "#{setting} must be a mapping" unless values.is_a?(Hash)
 
       EnvironmentOverrides.validate_entries!(values)
       values.each do |key, value|
         raise Invalid, "#{key} is supplied by the workspace runner" if RESERVED_ENV.include?(key)
         if key.match?(/(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL)/i)
-          raise Invalid, 'Secret-like names cannot be declared in default_editable_env'
+          raise Invalid, "Secret-like names cannot be declared in #{setting}"
         end
         raise Invalid, 'Editable environment values must be single-line strings' if value.match?(/[\r\n]/)
       end
       values
     rescue EnvironmentOverrides::Invalid => e
       raise Invalid, e.message
+    end
+
+    def validate_environment_presets!(presets)
+      raise Invalid, 'environment_presets must be a mapping' unless presets.is_a?(Hash)
+
+      presets.each do |name, values|
+        unless name.is_a?(String) && !name.empty? && name == name.strip && !name.match?(/[[:cntrl:]]/)
+          raise Invalid, 'Preset names must be nonempty trimmed strings without control characters'
+        end
+        validate_editable_env!(values, setting: 'Each environment preset')
+        unless (values.keys - default_editable_env.keys).empty?
+          raise Invalid, 'Preset environment names must be declared in default_editable_env'
+        end
+      end
+      presets
     end
 
     def validate_editable_overlap!
