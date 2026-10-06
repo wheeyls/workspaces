@@ -97,6 +97,30 @@ temporarily stashed and restored (including staged state). On a restore conflict
 the stash is retained for manual recovery. Updating the checkout does not run
 setup or restart the already-running backend; use Rebuild & restart afterward.
 
+### Editable environment presets
+
+Recipes can define editable environment defaults and named presets in
+`.workspaces.yml`:
+
+```yaml
+default_editable_env:
+  DEMO_MODE: "false"
+
+environment_presets:
+  Demo:
+    DEMO_MODE: "true"
+  Demo off:
+    DEMO_MODE: "false"
+```
+
+Each preset maps editable variable names to values. In the workspace editor,
+choosing a preset fills the draft and replaces its custom editor lines rather
+than merging with them. Selection does not save or restart the workspace; choose
+**Save & restart** to apply the draft. Presets are not applied automatically,
+and defining them requires no JavaScript edits. Preset keys must be declared in
+`default_editable_env`; recipes reject undeclared keys and secret-like values.
+Hidden environment values are never exposed in the editor or preset choices.
+
 The front door is not an authentication boundary. Its host and same-origin checks
 protect routing and POST actions, but a publicly reachable instance still needs
 access control such as VPN or SSO. Do not expose workspace backend ports directly.

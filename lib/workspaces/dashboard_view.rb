@@ -1,4 +1,5 @@
 require 'erb'
+require 'json'
 require_relative 'config'
 require_relative 'presentation'
 
@@ -121,6 +122,23 @@ module Workspaces
       return '' unless values.is_a?(Hash)
 
       values.sort.map { |name, value| "#{name}=#{value}" }.join("\n")
+    end
+
+    def environment_presets
+      presets = @snapshot['environment_presets']
+      return {} unless presets.is_a?(Hash)
+
+      presets.each_with_object({}) do |(name, entries), memo|
+        next unless name.respond_to?(:to_s)
+        next unless entries.is_a?(Hash)
+
+        lines = entries.sort.map { |entry_name, value| "#{entry_name}=#{value}" }.join("\n")
+        memo[name.to_s] = lines
+      end
+    end
+
+    def environment_presets_json
+      JSON.generate(environment_presets)
     end
 
     def action_form(action)

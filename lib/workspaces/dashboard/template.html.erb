@@ -17,12 +17,44 @@
     <section class="error-panel setup-error" id="error-panel" role="alert" <%= 'hidden' unless @presentation['error'] %>>
       <h3>What went wrong</h3><pre id="error"><%= escape(@presentation['error']) %></pre>
     </section>
-    <div class="workspace-actions">
-      <a id="preview" class="button button--primary" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
-      <div id="actions" class="workspace-actions"><% @presentation['actions'].each do |action| %><%= action_form(action) %><% end %></div>
-    </div>
     <p id="connection" role="status"></p>
-    <p id="source-update-message" role="status"><%= field('source_update_message') %></p>
+  </section>
+  <section class="status-panel controls-panel" aria-labelledby="actions-settings-title">
+    <h2 id="actions-settings-title">Actions &amp; settings</h2>
+    <div class="workspace-actions-group" aria-labelledby="actions-heading">
+      <h3 id="actions-heading">Workspace actions</h3>
+      <div class="workspace-actions">
+        <a id="preview" class="button button--primary" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
+        <div id="actions" class="workspace-actions"><% @presentation['actions'].each do |action| %><%= action_form(action) %><% end %></div>
+        <a class="button button--subtle" href="/workspaces/<%= @id %><%= @snapshot['log_source'] == 'backend' ? '?log=backend' : '' %>">Refresh status</a>
+      </div>
+      <p id="source-update-message" role="status"><%= field('source_update_message') %></p>
+    </div>
+    <div class="workspace-settings" aria-labelledby="environment-overrides">
+      <h3 id="environment-overrides">Editable environment</h3>
+      <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" data-environment-form data-environment-presets="<%= escape(environment_presets_json) %>">
+        <fieldset class="env-fieldset" data-environment-fieldset <%= 'disabled' if @presentation['busy'] %>>
+          <legend class="env-legend">Workspace settings</legend>
+          <% unless environment_presets.empty? %>
+            <div data-preset-controls hidden>
+              <p class="env-input-label" id="environment-preset-label">Preset</p>
+              <div class="env-preset-buttons" role="group" aria-labelledby="environment-preset-label" aria-describedby="environment-preset-help">
+                <% environment_presets.each_key do |name| %>
+                  <button type="button" class="button button--subtle env-preset-button" data-environment-preset="<%= escape(name) %>" aria-pressed="false"><%= escape(name) %></button>
+                <% end %>
+              </div>
+              <p class="muted" id="environment-preset-help">Select a preset, then Save &amp; restart to apply.</p>
+            </div>
+          <% end %>
+          <label class="env-input-label" for="editable-env">Environment variables</label>
+          <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"><%= escape(editable_environment_text) %></textarea>
+        </fieldset>
+        <div class="env-actions">
+          <button class="button button--primary" data-env-submit <%= 'disabled' if @presentation['busy'] %>>Save &amp; restart</button>
+        </div>
+        <p class="muted" id="environment-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
   </section>
   <section class="log-panel" aria-labelledby="log-title">
     <div class="log-header"><h2 id="log-title">Live <%= field('log_source') == 'backend' ? 'backend' : 'setup' %> log</h2><time id="updated"><%= field('updated_at') %></time></div>
@@ -31,23 +63,6 @@
       <a href="?log=backend" data-log-source="backend" <%= 'aria-current="page"' if @snapshot['log_source'] == 'backend' %>>Backend log</a>
     </nav>
     <pre id="log" tabindex="0" aria-label="<%= field('log_source') == 'backend' ? 'Backend' : 'Setup' %> log"><%= field('log_tail') %></pre>
-  </section>
-  <section class="status-panel env-panel" aria-labelledby="environment-overrides">
-    <h2 id="environment-overrides">Editable environment</h2>
-    <p class="muted">One NAME=value per line. These non-secret settings start from <code>default_editable_env</code> in the trusted recipe. Edit values to customize this workspace; remove a line to restore its default.</p>
-    <p class="muted">Do not enter secrets: editor values appear in the dashboard and status API. Add other non-secret names as needed. Previously saved values outside the editor remain hidden and unchanged.</p>
-    <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" data-environment-form>
-      <fieldset class="env-fieldset" data-environment-fieldset>
-        <legend class="env-legend">Workspace settings</legend>
-        <label class="env-input-label" for="editable-env">Environment variables</label>
-        <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="editable-env-help"><%= escape(editable_environment_text) %></textarea>
-        <p class="muted" id="editable-env-help">Values may contain =. Blank lines are ignored. Names are case-sensitive and cannot repeat.</p>
-      </fieldset>
-      <div class="env-actions">
-        <button class="button button--primary" data-env-submit>Save &amp; restart</button>
-      </div>
-      <p class="muted" id="environment-status" role="status" aria-live="polite"></p>
-    </form>
   </section>
   <details class="status-panel"><summary>Workspace details</summary><dl><dt>Preview URL</dt><dd><a class="detail-link" href="<%= escape(Config.preview_url(@id)) %>" target="_blank" rel="noopener noreferrer"><%= escape(Config.preview_url(@id)) %></a> <span class="muted">Available when ready</span></dd><dt>Branch</dt><dd><%= field('branch') %></dd><dt>Path</dt><dd><code><%= field('path') %></code></dd><dt>Related PR</dt><dd><%= escape(@snapshot.dig('related_pr', 'number') || 'None') %></dd><dt>Created</dt><dd><%= escape(@snapshot['created_at'] || 'Unavailable') %></dd><dt>Last startup</dt><dd><%= escape(@snapshot['started_at'] || 'Never') %></dd></dl></details>
   <section class="status-panel danger-zone" aria-labelledby="danger-heading">

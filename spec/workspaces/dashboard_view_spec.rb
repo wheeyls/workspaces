@@ -91,11 +91,35 @@ RSpec.describe Workspaces::DashboardView do
 
   it 'renders editable values as escaped line-based settings without exposing hidden overrides' do
     html = described_class.render(snapshot.merge('environment_keys' => %w(APP_VARIANT SECRET_TOKEN),
-                                                 'editable_environment' => { 'APP_VARIANT' => '<admin>' }))
+                                                  'editable_environment' => { 'APP_VARIANT' => '<admin>' }))
 
-    expect(html).to include('Editable environment', '/workspaces/agent-123/environment')
+    expect(html).to include('Actions &amp; settings', '/workspaces/agent-123/environment')
     expect(html).to include('name="editable_env"', 'APP_VARIANT=&lt;admin&gt;')
+    expect(html).not_to include('id="environment-preset"')
+    expect(html).to include('href="/workspaces/agent-123">Refresh status</a>')
     expect(html).not_to include('SECRET_TOKEN=')
+  end
+
+  it 'renders escaped environment preset buttons and JSON data for client-side draft fill' do
+    html = described_class.render(snapshot.merge(
+                                  'environment_presets' => {
+                                    '<Admin>' => { 'UE_APP' => 'admin', 'ROUTING_SUBDOMAIN' => 'admin' },
+                                    'Vendor' => { 'UE_APP' => 'vendor', 'ROUTING_SUBDOMAIN' => 'vendors' }
+                                  }
+                                ))
+
+    expect(html).to include('role="group" aria-labelledby="environment-preset-label"')
+    expect(html).to include('type="button" class="button button--subtle env-preset-button" data-environment-preset="&lt;Admin&gt;" aria-pressed="false"')
+    expect(html).to include('type="button" class="button button--subtle env-preset-button" data-environment-preset="Vendor" aria-pressed="false"')
+    expect(html).to include('data-preset-controls hidden')
+    expect(html).to include('data-environment-presets="')
+    expect(html).to include('&quot;&lt;Admin&gt;&quot;')
+    expect(html).to include('ROUTING_SUBDOMAIN=admin')
+    expect(html).to include('UE_APP=admin')
+    expect(html).to include('&quot;Vendor&quot;')
+    expect(html).to include('ROUTING_SUBDOMAIN=vendors')
+    expect(html).to include('UE_APP=vendor')
+    expect(html).to include('Preset loaded into draft only. Use Save & restart to apply changes.')
   end
 
   it 'supports snapshots without environment keys for older fixtures' do
@@ -175,5 +199,23 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('action="/workspaces/agent-123/remove"')
     expect(html).to match(/name="confirm_id"[^>]*disabled/)
     expect(html).to include('disabled>Delete workspace')
+  end
+
+  it 'keeps required control ids and order with actions/settings before log and danger zone separate' do
+    html = described_class.render(snapshot)
+
+    status_index = html.index('id="status"')
+    actions_panel_index = html.index('id="actions-settings-title"')
+    log_index = html.index('id="log-title"')
+    danger_index = html.index('Danger Zone')
+
+    expect(status_index).not_to be_nil
+    expect(actions_panel_index).not_to be_nil
+    expect(log_index).not_to be_nil
+    expect(danger_index).not_to be_nil
+    expect(status_index).to be < actions_panel_index
+    expect(actions_panel_index).to be < log_index
+    expect(log_index).to be < danger_index
+    expect(html).to include('id="actions"', 'id="preview"', 'id="environment-form"', 'id="remove-form"')
   end
 end
