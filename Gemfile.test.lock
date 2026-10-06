@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    workspaces (0.1.5)
+    workspaces (0.1.6)
       puma (>= 6, < 9)
       rack (~> 3.2)
       rackup (~> 2.2)
@@ -52,7 +52,7 @@ CHECKSUMS
   rspec-expectations (3.13.5)
   rspec-mocks (3.13.8)
   rspec-support (3.13.7)
-  workspaces (0.1.5)
+  workspaces (0.1.6)
 
 BUNDLED WITH
   4.0.3
