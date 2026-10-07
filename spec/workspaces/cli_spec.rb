@@ -124,6 +124,78 @@ RSpec.describe Workspaces::Cli do
     expect(JSON.parse(stdout)).to eq([])
   end
 
+  it 'creates with a preset without starting and rejects unknown presets before creating a worktree' do
+    repository
+    root = Workspaces::Config.repo_root
+    config = YAML.safe_load(root.join('.workspaces.yml').read)
+    config['default_editable_env'] = { 'APP_VARIANT' => 'www' }
+    config['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
+    root.join('.workspaces.yml').write(YAML.dump(config))
+
+    stdout, = capture_streams do
+      expect(described_class.run(['create', '--branch', 'main', '--preset', 'Admin', '--json'])).to eq(0)
+    end
+    id = JSON.parse(stdout).fetch('id')
+    expect(Workspaces::EnvironmentOverrides.new(id).editable_values(config['default_editable_env']))
+      .to eq('APP_VARIANT' => 'admin')
+    expect(Workspaces::StateStore.new(Workspaces::Config.state_file).get(id)['status']).to eq('idle')
+    before = Workspaces::Registry.new.list.length
+    _, stderr = capture_streams do
+      expect(described_class.run(['create', '--branch', 'main', '--preset', 'Missing'])).to eq(1)
+    end
+    expect(stderr).to include('Unknown environment preset')
+    expect(Workspaces::Registry.new.list.length).to eq(before)
+  end
+
+  it 'passes named presets to start, prepare, and restart without changing other options' do
+    coordinator = instance_double(Workspaces::Coordinator)
+    allow(coordinator).to receive(:start).and_return(true)
+    allow(coordinator).to receive(:restart).and_return(true)
+    allow(coordinator).to receive(:wait).with('fixture-123').and_return('status' => 'ready')
+    cli = described_class.new
+    allow(cli).to receive(:coordinator).and_return(coordinator)
+
+    stdout, stderr = capture_streams do
+      expect(cli.run(['start', 'fixture-123', '--preset', 'Admin'])).to eq(0)
+      expect(cli.run(['prepare', 'fixture-123', '--preset', 'Vendor'])).to eq(0)
+      expect(cli.run(['restart', 'fixture-123', '--preset', 'Admin'])).to eq(0)
+    end
+
+    expect(stdout).to include('"status": "ready"')
+    expect(stderr).to eq('')
+    expect(coordinator).to have_received(:start).with('fixture-123', force: false, preset: 'Admin', set: {}, unset: [])
+    expect(coordinator).to have_received(:start).with('fixture-123', force: true, preset: 'Vendor', set: {}, unset: [])
+    expect(coordinator).to have_received(:restart).with('fixture-123', preset: 'Admin', set: {}, unset: [])
+  end
+
+  it 'creates with repeated sets, unsets, and a preset while rejecting invalid input before creation' do
+    repository
+    root = Workspaces::Config.repo_root
+    config = YAML.safe_load(root.join('.workspaces.yml').read)
+    config['default_editable_env'] = { 'APP_VARIANT' => 'www', 'APP_CHANNEL' => 'www' }
+    config['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
+    root.join('.workspaces.yml').write(YAML.dump(config))
+
+    stdout, = capture_streams do
+      expect(described_class.run(['create', '--branch', 'main', '--preset', 'Admin',
+                                  '--set', 'APP_CHANNEL=my=portal', '--set', 'EXTRA=yes',
+                                  '--unset', 'APP_VARIANT', '--json'])).to eq(0)
+    end
+    id = JSON.parse(stdout).fetch('id')
+    expect(Workspaces::EnvironmentOverrides.new(id).editable_values(config['default_editable_env']))
+      .to eq('APP_VARIANT' => 'www', 'APP_CHANNEL' => 'my=portal', 'EXTRA' => 'yes')
+
+    before = Workspaces::Registry.new.list.length
+    [['--set', 'BAD'], ['--set', 'SECRET_TOKEN=bad'], ['--unset', 'WORKSPACE_PORT'],
+     ['--set', 'APP_VARIANT=one', '--set', 'APP_VARIANT=two']].each do |flags|
+      _, stderr = capture_streams do
+        expect(described_class.run(['create', '--branch', 'main', *flags])).to eq(1)
+      end
+      expect(stderr).not_to be_empty
+      expect(Workspaces::Registry.new.list.length).to eq(before)
+    end
+  end
+
   it 'exec runs command with workspace Bundler env even under source Bundler env' do
     source_root = Workspaces::Config.home.join('source-bundle')
     write_path_marker_bundle(root: source_root, marker: 'source', include_workspaces: true)
