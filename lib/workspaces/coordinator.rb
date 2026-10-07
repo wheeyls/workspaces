@@ -18,12 +18,12 @@ module Workspaces
       @workers_mutex = Mutex.new
     end
 
-    def start(id, force: false)
-      launch(id, restart: false, force: force)
+    def start(id, force: false, preset: nil, set: {}, unset: [])
+      launch(id, restart: false, force: force, prelaunch: settings_update(id, preset, set, unset))
     end
 
-    def restart(id)
-      launch(id, restart: true, force: true)
+    def restart(id, preset: nil, set: {}, unset: [])
+      launch(id, restart: true, force: true, prelaunch: settings_update(id, preset, set, unset))
     end
 
     def update_environment(id, set:, remove:)
@@ -73,6 +73,14 @@ module Workspaces
 
     private
 
+    def settings_update(id, preset, set, unset)
+      return if !preset && set.empty? && unset.empty?
+
+      lambda do |_workspace|
+        EnvironmentOverrides.new(id).apply_settings(preset: preset, set: set, unset: unset)
+      end
+    end
+
     def resolve_status(id, status, busy)
       return busy ? status : 'interrupted' if ACTIVE.include?(status)
       return status if status == 'error'
@@ -107,6 +115,9 @@ module Workspaces
       lock = acquire_lock(id)
       return false unless lock
 
+      if prelaunch && !restart && !force && Backend.new(id).running?
+        raise ArgumentError, 'Workspace is running; use restart --preset to change its environment'
+      end
       return false if backend_already_running?(id, force, lock)
       prelaunch&.call(workspace)
       publish_starting(id, restart)

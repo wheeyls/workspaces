@@ -5,6 +5,82 @@ RSpec.describe Workspaces::Coordinator do
 
   let(:workspace) { Workspaces::Registry.new.create(branch: 'main') }
 
+  it 'switches a running workspace preset before launching a restart' do
+    path = Workspaces::Config.repo_root.join('.workspaces.yml')
+    recipe = YAML.safe_load(path.read)
+    recipe['default_editable_env'] = { 'APP_VARIANT' => 'www' }
+    recipe['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
+    path.write(YAML.dump(recipe))
+    overrides = Workspaces::EnvironmentOverrides.new(workspace.id)
+    backend = instance_double(Workspaces::Backend, running?: true)
+    allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
+    workflow = instance_double(Workspaces::Workflow)
+    allow(Workspaces::Workflow).to receive(:new).and_return(workflow)
+    allow(workflow).to receive(:run!) do |restart:|
+      expect(restart).to be(true)
+      expect(overrides.editable_values(recipe['default_editable_env'])).to eq('APP_VARIANT' => 'admin')
+      30123
+    end
+
+    coordinator = described_class.new
+    expect(coordinator.restart(workspace.id, preset: 'Admin')).to be(true)
+    expect(coordinator.wait(workspace.id)['steps']).to all(include('state' => 'pending'))
+    expect(workflow).to have_received(:run!).with(restart: true)
+  end
+
+  it 'applies a preset before preparing a stopped workspace' do
+    path = Workspaces::Config.repo_root.join('.workspaces.yml')
+    recipe = YAML.safe_load(path.read)
+    recipe['default_editable_env'] = { 'APP_VARIANT' => 'www' }
+    recipe['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
+    path.write(YAML.dump(recipe))
+    overrides = Workspaces::EnvironmentOverrides.new(workspace.id)
+    backend = instance_double(Workspaces::Backend, running?: false)
+    allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
+    workflow = instance_double(Workspaces::Workflow)
+    allow(Workspaces::Workflow).to receive(:new).and_return(workflow)
+    allow(workflow).to receive(:run!) do |restart:|
+      expect(restart).to be(false)
+      expect(overrides.editable_values(recipe['default_editable_env'])).to eq('APP_VARIANT' => 'admin')
+      30123
+    end
+
+    coordinator = described_class.new
+    expect(coordinator.start(workspace.id, preset: 'Admin')).to be(true)
+    expect(coordinator.wait(workspace.id)['steps']).to all(include('state' => 'pending'))
+  end
+
+  it 'does not overwrite settings for a missing preset or while workspace is busy' do
+    path = Workspaces::Config.repo_root.join('.workspaces.yml')
+    recipe = YAML.safe_load(path.read)
+    recipe['default_editable_env'] = { 'APP_VARIANT' => 'www' }
+    recipe['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
+    path.write(YAML.dump(recipe))
+    overrides = Workspaces::EnvironmentOverrides.new(workspace.id)
+    expect { described_class.new.start(workspace.id, preset: 'Missing') }
+      .to raise_error(Workspaces::EnvironmentOverrides::Invalid, /Unknown environment preset/)
+    expect(overrides.load).to eq({})
+    Workspaces::Registry.new.with_lock(workspace.id) do
+      expect(described_class.new.restart(workspace.id, preset: 'Admin')).to be(false)
+    end
+    expect(overrides.load).to eq({})
+  end
+
+  it 'requires restart when changing a running workspace through start' do
+    path = Workspaces::Config.repo_root.join('.workspaces.yml')
+    recipe = YAML.safe_load(path.read)
+    recipe['default_editable_env'] = { 'APP_VARIANT' => 'www' }
+    recipe['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
+    path.write(YAML.dump(recipe))
+    workspace_id = workspace.id
+    backend = instance_double(Workspaces::Backend, running?: true)
+    allow(Workspaces::Backend).to receive(:new).with(workspace_id).and_return(backend)
+
+    expect { described_class.new.start(workspace_id, preset: 'Admin') }
+      .to raise_error(ArgumentError, /restart --preset/)
+    expect(Workspaces::EnvironmentOverrides.new(workspace_id).load).to eq({})
+  end
+
   describe 'snapshot environment presets' do
     let(:defaults) { { 'APP_VARIANT' => 'www', 'ROUTING_SUBDOMAIN' => 'www', 'DEMO_MODE' => 'false' } }
     let(:presets) do
