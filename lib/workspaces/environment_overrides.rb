@@ -75,6 +75,33 @@ module Workspaces
       load
     end
 
+    def apply_preset(name, recipe: Recipe.new)
+      apply_settings(preset: name, recipe: recipe)
+    end
+
+    def self.settings_for(recipe:, preset: nil, set: {}, unset: [], current: nil)
+      defaults = recipe.default_editable_env
+      preset_values = recipe.environment_presets.fetch(preset) { raise Invalid, "Unknown environment preset: #{preset}" } if preset
+      values = preset ? defaults.merge(preset_values) : (current || defaults).dup
+      validate_entries!(set)
+      unset.each { |name| validate_name!(name) }
+      raise Invalid, 'Cannot set and unset the same name' unless (set.keys & unset).empty?
+      names = set.keys + unset
+      if names.any? { |name| name.match?(/(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL)/i) }
+        raise Invalid, 'Secret-like environment names cannot be stored in the visible editor'
+      end
+      values.merge!(set)
+      unset.each { |name| values.delete(name) }
+      validate_entries!(values)
+      values
+    end
+
+    def apply_settings(preset: nil, set: {}, unset: [], recipe: Recipe.new)
+      current = preset ? nil : editable_values(recipe.default_editable_env)
+      values = self.class.settings_for(recipe: recipe, preset: preset, set: set, unset: unset, current: current)
+      replace_editable(values.sort.map { |key, value| "#{key}=#{value}" }.join("\n"), defaults: recipe.default_editable_env)
+    end
+
     def apply_patch(set:, remove:)
       validate_patch!(set, remove)
       updated = load_file(file_path).merge(set)

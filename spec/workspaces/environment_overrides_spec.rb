@@ -131,4 +131,53 @@ RSpec.describe Workspaces::EnvironmentOverrides do
     expect(store.editable_values(defaults)).to eq('APP_VARIANT' => 'preview')
     expect(store.load).to eq('APP_VARIANT' => 'preview')
   end
+
+  it 'applies a named preset as a replacement while preserving hidden legacy values' do
+    root = Workspaces::Config.repo_root
+    config = YAML.safe_load(root.join('.workspaces.yml').read)
+    config['default_editable_env'] = { 'APP_VARIANT' => 'www', 'APP_CHANNEL' => 'www' }
+    config['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' }, 'Vendor' => { 'APP_VARIANT' => 'my' } }
+    root.join('.workspaces.yml').write(YAML.dump(config))
+    store.apply_patch(set: { 'SECRET_TOKEN' => 'hidden' }, remove: [])
+    store.replace_editable("APP_VARIANT=custom\nEXTRA=old", defaults: config['default_editable_env'])
+
+    store.apply_preset('Admin')
+    expect(store.editable_values(config['default_editable_env'])).to eq('APP_VARIANT' => 'admin', 'APP_CHANNEL' => 'www')
+    expect(store.load).to include('SECRET_TOKEN' => 'hidden')
+    store.apply_preset('Vendor')
+    expect(store.editable_values(config['default_editable_env'])).to eq('APP_VARIANT' => 'my', 'APP_CHANNEL' => 'www')
+    expect(store.load).not_to have_key('EXTRA')
+    expect { store.apply_preset('Missing') }.to raise_error(described_class::Invalid, /Unknown environment preset/)
+    expect(store.editable_values(config['default_editable_env'])['APP_VARIANT']).to eq('my')
+  end
+
+  it 'patches visible settings and composes them after a preset without leaking hidden values' do
+    root = Workspaces::Config.repo_root
+    config = YAML.safe_load(root.join('.workspaces.yml').read)
+    config['default_editable_env'] = { 'APP_VARIANT' => 'www', 'APP_CHANNEL' => 'www' }
+    config['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
+    root.join('.workspaces.yml').write(YAML.dump(config))
+    store.apply_patch(set: { 'SECRET_TOKEN' => 'hidden' }, remove: [])
+    store.apply_settings(set: { 'EXTRA' => 'one' })
+    store.apply_settings(set: { 'APP_CHANNEL' => 'my=portal' })
+    expect(store.editable_values(config['default_editable_env']))
+      .to eq('APP_VARIANT' => 'www', 'APP_CHANNEL' => 'my=portal', 'EXTRA' => 'one')
+    store.apply_settings(preset: 'Admin', set: { 'APP_CHANNEL' => 'preview' }, unset: ['APP_VARIANT'])
+    expect(store.editable_values(config['default_editable_env']))
+      .to eq('APP_VARIANT' => 'www', 'APP_CHANNEL' => 'preview')
+    expect(store.load).to include('SECRET_TOKEN' => 'hidden')
+    expect(store.load).not_to have_key('EXTRA')
+  end
+
+  it 'rejects conflicting and secret-like CLI settings without changing storage' do
+    store.apply_settings(set: { 'APP_VARIANT' => 'admin' })
+    original = store.load
+    [{ set: { 'APP_VARIANT' => 'my' }, unset: ['APP_VARIANT'] },
+     { set: { 'SECRET_TOKEN' => 'bad' }, unset: [] },
+     { set: {}, unset: ['PASSWORD'] },
+     { set: { 'WORKSPACE_PORT' => '1' }, unset: [] }].each do |options|
+      expect { store.apply_settings(**options) }.to raise_error(described_class::Invalid)
+      expect(store.load).to eq(original)
+    end
+  end
 end
