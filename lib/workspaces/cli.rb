@@ -49,6 +49,28 @@ module Workspaces
       options = {}
       OptionParser.new do |parser|
         parse_common_options(parser, options)
+        parser.on('--preset NAME') { |value| options[:preset] = value } if %w(create start prepare restart).include?(command)
+        if %w(create start prepare restart).include?(command)
+          parser.on('--set NAME=VALUE') do |value|
+            name, separator, setting = value.partition('=')
+            raise OptionParser::InvalidArgument, '--set requires NAME=VALUE' if separator.empty?
+            EnvironmentOverrides.validate_name!(name)
+            EnvironmentOverrides.validate_value!(setting)
+            if name.match?(/(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL)/i)
+              raise OptionParser::InvalidArgument, 'Secret-like names cannot be set on the command line'
+            end
+            options[:set] ||= {}
+            raise OptionParser::InvalidArgument, 'duplicate --set name' if options[:set].key?(name)
+            options[:set][name] = setting
+          end
+          parser.on('--unset NAME') do |value|
+            EnvironmentOverrides.validate_name!(value)
+            if value.match?(/(?:SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL)/i)
+              raise OptionParser::InvalidArgument, 'Secret-like names cannot be unset on the command line'
+            end
+            (options[:unset] ||= []) << value
+          end
+        end
         parse_tls_options(parser, options) if command == 'serve'
       end.parse!(argv)
       options
@@ -102,7 +124,8 @@ module Workspaces
     end
 
     def create(_id, options)
-      emit(registry.create(**options.slice(:branch, :pr, :new_branch, :from)).describe, options)
+      emit(registry.create(**options.slice(:branch, :pr, :new_branch, :from, :preset),
+                           set: options.fetch(:set, {}), unset: options.fetch(:unset, [])).describe, options)
     end
 
     def list(_id, options)
@@ -114,14 +137,16 @@ module Workspaces
     end
 
     def lifecycle(id, options)
-      action = proc { run_lifecycle(options.fetch(:command), id) }
+      action = proc { run_lifecycle(options.fetch(:command), id, preset: options[:preset],
+                                    set: options.fetch(:set, {}), unset: options.fetch(:unset, [])) }
       result = options[:json] ? with_stdout_on_stderr(&action) : action.call
       emit(result, options)
       raise ArgumentError, result['last_error'] if result['status'] == 'error'
     end
 
-    def run_lifecycle(command, id)
-      started = command == 'restart' ? coordinator.restart(id) : coordinator.start(id, force: command == 'prepare')
+    def run_lifecycle(command, id, preset: nil, set: {}, unset: [])
+      started = command == 'restart' ? coordinator.restart(id, preset: preset, set: set, unset: unset) :
+        coordinator.start(id, force: command == 'prepare', preset: preset, set: set, unset: unset)
       if !started && coordinator.snapshot(id)['active']
         raise ArgumentError, 'Workspace is busy; inspect it with show --json'
       end
@@ -171,8 +196,8 @@ module Workspaces
     end
 
     def usage
-      'Usage: bin/workspaces serve | create (--branch REF | --pr NUMBER | --new-branch NAME [--from REF]) [--json] | ' \
-        'list [--pr NUMBER] [--json] | show/start/prepare/restart/stop ID [--json] | ' \
+      'Usage: bin/workspaces serve | create (--branch REF | --pr NUMBER | --new-branch NAME [--from REF]) [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
+        'list [--pr NUMBER] [--json] | show/start/prepare/restart ID [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | stop ID | ' \
         'exec ID -- COMMAND... | remove ID [--force]'
     end
 

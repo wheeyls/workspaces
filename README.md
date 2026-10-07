@@ -121,6 +121,24 @@ and defining them requires no JavaScript edits. Preset keys must be declared in
 `default_editable_env`; recipes reject undeclared keys and secret-like values.
 Hidden environment values are never exposed in the editor or preset choices.
 
+Use `create --branch main --preset Demo` to save a preset for a new, still-idle
+workspace. `start ID --preset Demo` applies it before preparing a stopped
+workspace; `restart ID --preset 'Demo off'` switches a running workspace and
+restarts its server. `prepare ID --preset Demo` switches and rebuilds. An
+unknown name is rejected without changing saved settings. Selecting a preset
+replaces the editable settings (including custom editor lines) but preserves
+hidden legacy overrides. A running workspace requires `restart --preset` or
+`prepare --preset`, not `start --preset`.
+
+For one-off non-secret tweaks, add repeatable `--set NAME=VALUE` and
+`--unset NAME` flags to `create`, `start`, `prepare`, or `restart`. For example,
+`restart ID --preset Demo --set DEMO_FEATURE=on` applies the preset first,
+then the individual changes, and restarts. Without `--preset`, these flags
+patch current editable settings. Names reserved for the runner and names
+suggesting secrets are rejected; values on the command line may be visible
+in process listings and shell history. Use a secret store, not `--set`, for
+credentials.
+
 The front door is not an authentication boundary. Its host and same-origin checks
 protect routing and POST actions, but a publicly reachable instance still needs
 access control such as VPN or SSO. Do not expose workspace backend ports directly.

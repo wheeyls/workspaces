@@ -1,6 +1,8 @@
 require_relative 'worktree'
 require_relative 'state_store'
 require_relative 'backend'
+require_relative 'recipe'
+require_relative 'environment_overrides'
 
 module Workspaces
   class Registry
@@ -17,9 +19,12 @@ module Workspaces
       end
     end
 
-    def create(**options)
+    def create(preset: nil, set: {}, unset: [], **options)
+      recipe = Recipe.new if preset || !set.empty? || !unset.empty?
+      EnvironmentOverrides.settings_for(recipe: recipe, preset: preset, set: set, unset: unset) if recipe
       workspace = Worktree.create(**options)
       StateStore.new(Config.state_file).set(workspace.id, 'status' => 'idle', 'related_pr' => workspace.related_pr)
+      EnvironmentOverrides.new(workspace.id).apply_settings(preset: preset, set: set, unset: unset, recipe: recipe) if recipe
       workspace
     end
 
