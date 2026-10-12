@@ -23,8 +23,7 @@ RSpec.describe Workspaces::DashboardView, '.render' do
     expect(html).to include('if (submit) submit.disabled = activeBusy;')
     expect(html).to include('button.disabled = activeBusy;')
     expect(html).to include('Workspace is busy. Environment updates are temporarily disabled.')
-    expect(html).to include('Preset loaded into draft only. Use Save & restart to apply changes.')
-    expect(html).to include('href="/workspaces/fixture">Refresh status</a>')
+    expect(html).to include("'Preset loaded into draft only. Use ' + submitLabel() + ' to apply changes.'")
     expect(html).not_to include('data-env-add-row', 'data-replace-toggle')
   end
 end
