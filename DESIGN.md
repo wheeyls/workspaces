@@ -48,10 +48,16 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 - **PR source update**: a secondary Update from PR form only for PR-sourced workspaces; it fetches the latest PR head, fast-forwards the checkout, and preserves local edits without rebuilding or restarting. A persistent result message explains when rebuild is needed or when a retained stash needs manual recovery.
 - **Failure panel**: prominently above the log, with escaped error details and a matching retry action.
 - **PR page**: existing workspaces are primary; creating another is a collapsed secondary disclosure. Creation is primary only when none exist.
+- **Lifecycle state machine**: the workspace detail page is driven by `Presentation::STATES`. Each state (`idle`, `busy`, `ready`, `stopped`, `error`/`interrupted`, `unknown`) declares which sections exist (progress, actions, environment, log, details, danger zone) and the label of the single environment-form button. Sections that are not usable or meaningful in a state are hidden, never shown disabled. The server renders the initial state and the polling script re-applies it from `presentation.sections`, so the page transitions without a reload.
+  - `idle` (brand new): only the environment editor plus a **Start workspace** button, with a one-line hint. No log, actions, details, or delete.
+  - `busy` (setup/restart running): only progress and the live log.
+  - `ready`: everything, with **Save & restart**.
+  - `stopped`: no progress from the previous run; **Save & start**.
+  - `error`/`interrupted`: retry action, environment editor, progress, and logs; **Save & retry**.
 - **Action buttons**: start, prepare/rebuild, restart server, stop server, and refresh
 - **Actions & settings panel**: status-adjacent panel that combines routine lifecycle controls, Open workspace, Refresh status, PR update messaging, and editable environment settings so routine operations stay in one keyboard-reachable region.
 - **Open workspace**: success-styled link available when the server is ready
-- **Lifecycle controls**: disabled while busy; helper text distinguishes rebuilding from server-only restart
+- **Lifecycle controls**: hidden while busy (see state machine); helper text distinguishes rebuilding from server-only restart
 - **Bounded log panel**: monospace text, fixed max height, manual-scroll-safe updates
 - **Log source switcher**: two native links inside one log panel, with current selection announced through `aria-current`; only the selected bounded log is loaded and refreshed. Setup is the default.
 - **Preview destination**: a small muted URL in Workspace details, visible before readiness; the primary Open workspace action remains reserved for ready servers.

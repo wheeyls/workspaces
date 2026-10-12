@@ -8,8 +8,9 @@
       <h2 id="status" role="status"><%= escape(@presentation['title']) %></h2>
       <span id="activity" <%= 'hidden' unless @presentation['busy'] %>><span class="activity-dot" aria-hidden="true"></span> In progress · <span id="elapsed">—</span></span>
     </div>
-    <p id="message"><%= field('message') %></p>
-    <ol class="stepper" id="progress" aria-label="Setup progress">
+    <p id="hint" <%= 'hidden' unless @presentation['hint'] %>><%= escape(@presentation['hint']) %></p>
+    <p id="message" <%= 'hidden' if @presentation['state'] == 'idle' %>><%= field('message') %></p>
+    <ol class="stepper" id="progress" data-section="progress" aria-label="Setup progress" <%= 'hidden' unless section?('progress') %>>
       <% @presentation['steps'].each do |step| %>
         <li class="step" data-step-state="<%= step['state'] %>" <%= 'aria-current="step"' if step['state'] == 'active' %>><span class="step-bullet" aria-hidden="true"></span><span><%= escape(step['label']) %></span><span class="step-outcome"><%= escape(step_outcome(step)) %></span></li>
       <% end %>
@@ -19,19 +20,18 @@
     </section>
     <p id="connection" role="status"></p>
   </section>
-  <section class="status-panel controls-panel" aria-labelledby="actions-settings-title">
-    <h2 id="actions-settings-title">Actions &amp; settings</h2>
-    <div class="workspace-actions-group" aria-labelledby="actions-heading">
+  <section class="status-panel controls-panel" id="controls" data-section-group aria-labelledby="actions-settings-title" <%= 'hidden' unless section?('actions') || section?('environment') %>>
+    <h2 id="actions-settings-title"><%= escape(@presentation['controls_title']) %></h2>
+    <div class="workspace-actions-group" data-section="actions" aria-labelledby="actions-heading" <%= 'hidden' unless section?('actions') %>>
       <h3 id="actions-heading">Workspace actions</h3>
       <div class="workspace-actions">
         <a id="preview" class="button button--primary" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
         <div id="actions" class="workspace-actions"><% @presentation['actions'].each do |action| %><%= action_form(action) %><% end %></div>
-        <a class="button button--subtle" href="/workspaces/<%= @id %><%= @snapshot['log_source'] == 'backend' ? '?log=backend' : '' %>">Refresh status</a>
       </div>
       <p id="source-update-message" role="status"><%= field('source_update_message') %></p>
     </div>
-    <div class="workspace-settings" aria-labelledby="environment-overrides">
-      <h3 id="environment-overrides">Editable environment</h3>
+    <div class="workspace-settings" data-section="environment" aria-labelledby="environment-overrides" <%= 'hidden' unless section?('environment') %>>
+      <h3 id="environment-overrides">Environment</h3>
       <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" data-environment-form data-environment-presets="<%= escape(environment_presets_json) %>">
         <fieldset class="env-fieldset" data-environment-fieldset <%= 'disabled' if @presentation['busy'] %>>
           <legend class="env-legend">Workspace settings</legend>
@@ -43,20 +43,20 @@
                   <button type="button" class="button button--subtle env-preset-button" data-environment-preset="<%= escape(name) %>" aria-pressed="false"><%= escape(name) %></button>
                 <% end %>
               </div>
-              <p class="muted" id="environment-preset-help">Select a preset, then Save &amp; restart to apply.</p>
+              <p class="muted" id="environment-preset-help">Presets decide which app this workspace runs. Select one, then use <strong data-submit-label><%= escape(@presentation['environment_submit']) %></strong> to apply it.</p>
             </div>
           <% end %>
           <label class="env-input-label" for="editable-env">Environment variables</label>
           <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"><%= escape(editable_environment_text) %></textarea>
         </fieldset>
         <div class="env-actions">
-          <button class="button button--primary" data-env-submit <%= 'disabled' if @presentation['busy'] %>>Save &amp; restart</button>
+          <button class="button button--primary" data-env-submit <%= 'disabled' if @presentation['busy'] %>><%= escape(@presentation['environment_submit']) %></button>
         </div>
         <p class="muted" id="environment-status" role="status" aria-live="polite"></p>
       </form>
     </div>
   </section>
-  <section class="log-panel" aria-labelledby="log-title">
+  <section class="log-panel" data-section="log" aria-labelledby="log-title" <%= 'hidden' unless section?('log') %>>
     <div class="log-header"><h2 id="log-title">Live <%= field('log_source') == 'backend' ? 'backend' : 'setup' %> log</h2><time id="updated"><%= field('updated_at') %></time></div>
     <nav class="log-switch" aria-label="Log source">
       <a href="?log=setup" data-log-source="setup" <%= 'aria-current="page"' if @snapshot['log_source'] != 'backend' %>>Setup log</a>
@@ -64,8 +64,8 @@
     </nav>
     <pre id="log" tabindex="0" aria-label="<%= field('log_source') == 'backend' ? 'Backend' : 'Setup' %> log"><%= field('log_tail') %></pre>
   </section>
-  <details class="status-panel"><summary>Workspace details</summary><dl><dt>Preview URL</dt><dd><a class="detail-link" href="<%= escape(Config.preview_url(@id)) %>" target="_blank" rel="noopener noreferrer"><%= escape(Config.preview_url(@id)) %></a> <span class="muted">Available when ready</span></dd><dt>Branch</dt><dd><%= field('branch') %></dd><dt>Path</dt><dd><code><%= field('path') %></code></dd><dt>Related PR</dt><dd><%= escape(@snapshot.dig('related_pr', 'number') || 'None') %></dd><dt>Created</dt><dd><%= escape(@snapshot['created_at'] || 'Unavailable') %></dd><dt>Last startup</dt><dd><%= escape(@snapshot['started_at'] || 'Never') %></dd></dl></details>
-  <section class="status-panel danger-zone" aria-labelledby="danger-heading">
+  <details class="status-panel" data-section="details" <%= 'hidden' unless section?('details') %>><summary>Workspace details</summary><dl><dt>Preview URL</dt><dd><a class="detail-link" href="<%= escape(Config.preview_url(@id)) %>" target="_blank" rel="noopener noreferrer"><%= escape(Config.preview_url(@id)) %></a> <span class="muted">Available when ready</span></dd><dt>Branch</dt><dd><%= field('branch') %></dd><dt>Path</dt><dd><code><%= field('path') %></code></dd><dt>Related PR</dt><dd><%= escape(@snapshot.dig('related_pr', 'number') || 'None') %></dd><dt>Created</dt><dd><%= escape(@snapshot['created_at'] || 'Unavailable') %></dd><dt>Last startup</dt><dd><%= escape(@snapshot['started_at'] || 'Never') %></dd></dl></details>
+  <section class="status-panel danger-zone" data-section="danger" aria-labelledby="danger-heading" <%= 'hidden' unless section?('danger') %>>
     <h2 id="danger-heading">Danger Zone</h2>
     <p>Deleting this workspace stops its server and removes its worktree. <strong>Discard uncommitted and untracked changes</strong> permanently. The branch and committed work are preserved.</p>
     <form method="post" action="/workspaces/<%= @id %>/remove" id="remove-form">

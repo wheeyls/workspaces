@@ -106,6 +106,10 @@ module Workspaces
 
     private
 
+    def section?(name)
+      @presentation.fetch('sections', {})[name]
+    end
+
     def field(name)
       escape(@snapshot[name])
     end

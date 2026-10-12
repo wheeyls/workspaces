@@ -13,6 +13,29 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).not_to include('<script>alert(1)</script>')
   end
 
+  it 'presents a brand new workspace with only the environment editor and a start button' do
+    html = described_class.render(snapshot.merge('editable_environment' => { 'UE_APP' => 'www' }))
+    hidden = ->(name) { html.match?(/data-section="#{name}"[^>]*\shidden/) }
+
+    expect(hidden.call('log')).to eq(true)
+    expect(hidden.call('actions')).to eq(true)
+    expect(hidden.call('details')).to eq(true)
+    expect(hidden.call('danger')).to eq(true)
+    expect(hidden.call('environment')).to eq(false)
+    expect(html).to include('Set up your workspace')
+    expect(html).to match(/data-env-submit\s*>Start workspace<\/button>/)
+  end
+
+  it 'shows only progress and logs while starting' do
+    steps = [{ 'key' => 'deps', 'label' => 'Dependencies', 'state' => 'active' }]
+    html = described_class.render(snapshot.merge('status' => 'preparing', 'active' => true, 'steps' => steps))
+    hidden = ->(name) { html.match?(/data-section="#{name}"[^>]*\shidden/) }
+
+    expect(hidden.call('progress')).to eq(false)
+    expect(hidden.call('log')).to eq(false)
+    %w(actions environment details danger).each { |name| expect(hidden.call(name)).to eq(true) }
+  end
+
   it 'renders active progress without actionable lifecycle controls' do
     steps = [{ 'key' => 'assets', 'label' => 'Building assets', 'state' => 'active' }]
     html = described_class.render(snapshot.merge('active' => true, 'status' => 'preparing',
@@ -93,10 +116,9 @@ RSpec.describe Workspaces::DashboardView do
     html = described_class.render(snapshot.merge('environment_keys' => %w(APP_VARIANT SECRET_TOKEN),
                                                   'editable_environment' => { 'APP_VARIANT' => '<admin>' }))
 
-    expect(html).to include('Actions &amp; settings', '/workspaces/agent-123/environment')
+    expect(html).to include('Set up your workspace', '/workspaces/agent-123/environment')
     expect(html).to include('name="editable_env"', 'APP_VARIANT=&lt;admin&gt;')
     expect(html).not_to include('id="environment-preset"')
-    expect(html).to include('href="/workspaces/agent-123">Refresh status</a>')
     expect(html).not_to include('SECRET_TOKEN=')
   end
 
@@ -119,7 +141,7 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('&quot;Vendor&quot;')
     expect(html).to include('ROUTING_SUBDOMAIN=vendors')
     expect(html).to include('UE_APP=vendor')
-    expect(html).to include('Preset loaded into draft only. Use Save & restart to apply changes.')
+    expect(html).to include("'Preset loaded into draft only. Use ' + submitLabel() + ' to apply changes.'")
   end
 
   it 'supports snapshots without environment keys for older fixtures' do

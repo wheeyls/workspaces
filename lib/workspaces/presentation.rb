@@ -6,13 +6,45 @@ module Workspaces
     ACTIONS = { 'start' => 'Start workspace', 'prepare' => 'Rebuild & restart',
                 'restart' => 'Restart server', 'stop' => 'Stop server' }.freeze
 
+    SECTIONS = %w(progress actions environment log details danger).freeze
+    MANAGEABLE = SECTIONS
+
+    # Workspace lifecycle state machine. Each state declares only what is usable and
+    # meaningful there; everything else is hidden rather than shown disabled.
+    #
+    #   idle ──start──▶ busy ──▶ ready ◀──▶ busy
+    #                     │        │
+    #                     ▼        ▼
+    #                   error   stopped ──start──▶ busy
+    #                (interrupted)
+    #
+    # `environment_submit` labels the single environment-form button, which saves the
+    # settings and (re)starts the workspace, so a brand new workspace needs only that.
+    STATES = {
+      'idle' => {
+        sections: %w(environment),
+        environment_submit: 'Start workspace', controls_title: 'Set up your workspace',
+        hint: 'Choose the environment you want to preview below, then start the workspace. ' \
+              'Setup usually takes a few minutes.'
+      },
+      'busy' => { sections: %w(progress log), environment_submit: 'Save & restart' },
+      'ready' => { sections: MANAGEABLE, environment_submit: 'Save & restart' },
+      'stopped' => { sections: %w(actions environment log details danger), environment_submit: 'Save & start' },
+      'error' => { sections: MANAGEABLE, environment_submit: 'Save & retry' },
+      'interrupted' => { sections: MANAGEABLE, environment_submit: 'Save & retry' },
+      'unknown' => { sections: %w(log details), environment_submit: 'Save & restart' }
+    }.freeze
+
     def initialize(snapshot)
       @snapshot = snapshot
     end
 
     def to_h
       { 'title' => title, 'busy' => busy?, 'error' => error, 'steps' => steps,
-        'actions' => actions, 'ready' => status == 'ready' && !busy? }
+        'actions' => actions, 'ready' => status == 'ready' && !busy?,
+        'state' => state, 'sections' => sections, 'hint' => definition[:hint],
+        'controls_title' => definition.fetch(:controls_title, 'Actions & settings'),
+        'environment_submit' => definition[:environment_submit] }
     end
 
     private
@@ -23,6 +55,22 @@ module Workspaces
 
     def busy?
       @snapshot['active'] || status == 'preparing'
+    end
+
+    def state
+      return 'busy' if busy?
+
+      STATES.key?(status) ? status : 'unknown'
+    end
+
+    def definition
+      STATES.fetch(state)
+    end
+
+    def sections
+      visible = definition[:sections].dup
+      visible.delete('progress') if steps.empty? || %w(idle stopped).include?(state)
+      SECTIONS.to_h { |name| [name, visible.include?(name)] }
     end
 
     def title
