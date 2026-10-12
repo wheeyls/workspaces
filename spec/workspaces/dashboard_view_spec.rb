@@ -212,8 +212,24 @@ RSpec.describe Workspaces::DashboardView do
     ])
 
     expect(html).to include('Running', 'Not running', '2026-10-01T11:00:00Z', '2026-10-01T12:00:00Z')
-    expect(html).to include('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).not_to include('<script>alert(1)</script>', '/workspaces/agent-123/remove')
+  end
+
+  it 'lists workspaces in a table keyed by ID without repeating the branch' do
+    html = described_class.index([
+      snapshot.merge('id' => 'agent-123', 'status' => 'ready', 'running' => true, 'branch' => 'workspaces/agent-123')
+    ])
+
+    expect(html).to include('<table class="workspace-table">', '<th scope="row"><a href="/workspaces/agent-123">agent-123</a></th>')
+    expect(html).to include('<th scope="col">Workspace</th>', '<th scope="col">Status</th>', 'Last startup')
+    expect(html).not_to include('workspaces/agent-123</')
+  end
+
+  it 'shows an empty message instead of an empty table when there are no workspaces' do
+    html = described_class.index([])
+
+    expect(html).to include('No workspaces yet.')
+    expect(html).not_to include('<table')
   end
 
   it 'keeps the delete form disabled during a busy setup, including on the initial HTML response' do
