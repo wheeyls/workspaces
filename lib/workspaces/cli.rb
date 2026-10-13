@@ -5,6 +5,7 @@ require 'rack/handler/puma'
 require_relative 'registry'
 require_relative 'coordinator'
 require_relative 'front_door'
+require_relative 'proxy_middleware'
 require_relative 'tls'
 require_relative 'child_env'
 
@@ -86,6 +87,7 @@ module Workspaces
     end
 
     def parse_tls_options(parser, options)
+      parser.on('--require PATH') { |value| (options[:require] ||= []) << value }
       parser.on('--secure') { options[:secure] = true }
       parser.on('--tls-cert PATH') { |value| options[:tls_cert] = value }
       parser.on('--tls-key PATH') { |value| options[:tls_key] = value }
@@ -93,6 +95,7 @@ module Workspaces
 
     def serve(_id, options)
       tls = Tls.from_serve_options(options)&.validate!
+      ProxyMiddleware.load_files(ProxyMiddleware.env_paths + options.fetch(:require, []))
 
       if tls
         tls.apply_env_defaults { serve_with_tls(tls) }
@@ -196,7 +199,7 @@ module Workspaces
     end
 
     def usage
-      'Usage: bin/workspaces serve | create (--branch REF | --pr NUMBER | --new-branch NAME [--from REF]) [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
+      'Usage: bin/workspaces serve [--require FILE] | create (--branch REF | --pr NUMBER | --new-branch NAME [--from REF]) [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
         'list [--pr NUMBER] [--json] | show/start/prepare/restart ID [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | stop ID | ' \
         'exec ID -- COMMAND... | remove ID [--force]'
     end

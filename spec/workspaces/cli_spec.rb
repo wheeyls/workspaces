@@ -108,6 +108,91 @@ RSpec.describe Workspaces::Cli do
     end
   end
 
+  describe 'proxy middleware files' do
+    around do |example|
+      Workspaces::ProxyMiddleware.reset!
+      example.run
+    ensure
+      Workspaces::ProxyMiddleware.reset!
+    end
+
+    def middleware_file(directory, name, header)
+      path = File.join(directory, name)
+      File.write(path, <<~RUBY)
+        class #{name.delete_suffix('.rb').capitalize}Tag
+          def initialize(app) = @app = app
+
+          def call(env)
+            status, headers, body = @app.call(env)
+            [status, headers.merge('#{header}' => '1'), body]
+          end
+        end
+        Workspaces.configure_proxy { use #{name.delete_suffix('.rb').capitalize}Tag }
+      RUBY
+      path
+    end
+
+    it 'loads files named by --require before building the front door' do
+      Dir.mktmpdir do |directory|
+        path = middleware_file(directory, 'flag.rb', 'x-flag')
+        allow(Rackup::Handler::Puma).to receive(:run) do |app, **_|
+          headers = app.call(Rack::MockRequest.env_for('http://evil.test/')).fetch(1)
+          expect(Workspaces::ProxyMiddleware.any?).to be(true)
+          expect(headers).to include('content-type')
+        end
+
+        expect(described_class.run(['serve', '--require', path])).to eq(0)
+        expect(Workspaces::ProxyMiddleware.any?).to be(true)
+      end
+    end
+
+    it 'loads files named by WORKSPACES_REQUIRE and by repeated --require, in that order' do
+      Dir.mktmpdir do |directory|
+        from_env = middleware_file(directory, 'fromenv.rb', 'x-env')
+        first = middleware_file(directory, 'first.rb', 'x-first')
+        second = middleware_file(directory, 'second.rb', 'x-second')
+        loaded = []
+        allow(Workspaces::ProxyMiddleware).to receive(:load_files) { |paths| loaded.concat(paths) }
+        allow(Rackup::Handler::Puma).to receive(:run)
+
+        ClimateControl.modify('WORKSPACES_REQUIRE' => from_env) do
+          expect(described_class.run(['serve', '--require', first, '--require', second])).to eq(0)
+        end
+
+        expect(loaded).to eq([from_env, first, second])
+      end
+    end
+
+    it 'does nothing special when no files are configured' do
+      allow(Rackup::Handler::Puma).to receive(:run) do |app, **_|
+        expect(app).to be_a(Workspaces::FrontDoor)
+      end
+
+      ClimateControl.modify('WORKSPACES_REQUIRE' => nil) do
+        expect(described_class.run(['serve'])).to eq(0)
+      end
+      expect(Workspaces::ProxyMiddleware.any?).to be(false)
+    end
+
+    it 'exits non-zero with a clear message when a file is missing, without starting the server' do
+      expect(Rackup::Handler::Puma).not_to receive(:run)
+
+      _, stderr = capture_streams do
+        expect(described_class.run(['serve', '--require', '/nope/missing.rb'])).to eq(1)
+      end
+
+      expect(stderr).to include('Proxy middleware file not found: /nope/missing.rb')
+    end
+
+    it 'rejects --require on commands other than serve' do
+      _, stderr = capture_streams do
+        expect(described_class.run(['list', '--require', 'x.rb'])).to eq(1)
+      end
+
+      expect(stderr).to include('invalid option: --require')
+    end
+  end
+
   it 'rejects serve-only TLS flags on unrelated commands' do
     _, stderr = capture_streams do
       expect(described_class.run(['list', '--secure'])).to eq(1)
