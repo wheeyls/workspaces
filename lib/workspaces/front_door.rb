@@ -5,15 +5,22 @@ require 'net/http'
 require_relative 'coordinator'
 require_relative 'dashboard_view'
 require_relative 'environment_overrides'
+require_relative 'proxy_middleware'
 
 module Workspaces
   class FrontDoor
     WORKSPACE_ROUTE = %r{\A/workspaces/([a-z0-9]+(?:-[a-z0-9]+)*)
                           (?:/(status|start|prepare|restart|stop|remove|update-pr|environment))?\z}x
 
+    # Rack env keys set on requests that reach a ready workspace backend, for use by
+    # middleware registered with Workspaces.configure_proxy.
+    WORKSPACE_ID_ENV = 'workspaces.workspace_id'.freeze
+    WORKSPACE_ENV = 'workspaces.workspace'.freeze
+
     def initialize(coordinator: Coordinator.new, registry: Registry.new)
       @coordinator = coordinator
       @registry = registry
+      @forwarder = ProxyMiddleware.build(method(:forward_to_backend))
     end
 
     def call(env)
@@ -230,7 +237,9 @@ module Workspaces
       snapshot = @coordinator.snapshot(id, include_log: false)
       return unavailable(id, request) unless snapshot['status'] == 'ready' && !snapshot['active']
 
-      forward(id, request)
+      request.env[WORKSPACE_ID_ENV] = id
+      request.env[WORKSPACE_ENV] = snapshot
+      @forwarder.call(request.env)
     rescue IOError, SystemCallError, Timeout::Error => e
       response(502, "Workspace backend unavailable: #{e.class}")
     end
@@ -239,6 +248,11 @@ module Workspaces
       return redirect(Config.dashboard_url(id)) if safe?(request)
 
       response(503, "Workspace not ready. Visit #{Config.dashboard_url(id)}")
+    end
+
+    # Innermost app of the proxy stack: sends the request to the workspace backend.
+    def forward_to_backend(env)
+      forward(env.fetch(WORKSPACE_ID_ENV), Rack::Request.new(env))
     end
 
     def forward(id, request)
