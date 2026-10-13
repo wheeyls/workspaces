@@ -143,6 +143,64 @@ The front door is not an authentication boundary. Its host and same-origin check
 protect routing and POST actions, but a publicly reachable instance still needs
 access control such as VPN or SSO. Do not expose workspace backend ports directly.
 
+### Proxy middleware
+
+The front door can run Rack middleware around traffic that is forwarded to a workspace
+backend. The gem knows nothing about what a middleware does: the container or host
+that runs `serve` registers its own. Typical uses are injecting a script tag, adding a
+header, or logging.
+
+```ruby
+# my_middleware.rb
+Workspaces.configure_proxy do
+  use MyMiddleware, option: 'value'
+end
+```
+
+Load it with `serve --require FILE` (repeatable) or by setting `WORKSPACES_REQUIRE` to
+one or more paths separated like `PATH` entries. Environment entries load first, then
+`--require` files in order. A missing file or an error while loading stops `serve` with
+a non-zero exit instead of silently running without it. These files are executed with
+the front door's privileges, so only name files the operator controls. With nothing
+registered, the front door behaves exactly as before.
+
+Blocks run in registration order and the first `use` is outermost. The stack wraps only
+the step that forwards a request to a ready workspace backend. The dashboard, redirects
+for workspaces that are not ready, and error pages never pass through it. For each
+proxied request, two Rack env keys are available:
+
+| Key | Value |
+| --- | --- |
+| `workspaces.workspace_id` | The workspace ID, such as `main-1ae4815f` |
+| `workspaces.workspace` | The workspace snapshot hash (branch, status, related PR, and so on) |
+
+Two details matter when rewriting response bodies. The proxy passes the browser's
+`Accept-Encoding` to the backend, so a compressed response arrives compressed; set
+`env['HTTP_ACCEPT_ENCODING'] = 'identity'` before calling the app, or skip responses
+with a `Content-Encoding` header. If you change the body, drop the stale `Content-Length`
+header. An example that appends a script tag to HTML pages:
+
+```ruby
+class ScriptInjector
+  TAG = '<script src="https://example.test/widget.js" data-thread-id="%<id>s"></script>'
+
+  def initialize(app)
+    @app = app
+  end
+
+  def call(env)
+    env['HTTP_ACCEPT_ENCODING'] = 'identity'
+    status, headers, body = @app.call(env)
+    return [status, headers, body] unless headers['content-type'].to_s.start_with?('text/html')
+
+    html = body.each.to_a.join.sub('</body>', format(TAG, id: env['workspaces.workspace_id']) + '</body>')
+    [status, headers.reject { |key, _| key.casecmp?('content-length') }, [html]]
+  end
+end
+
+Workspaces.configure_proxy { use ScriptInjector }
+```
+
 ### Local HTTPS
 
 To serve TLS directly, install/trust a local CA and create a certificate covering
@@ -198,6 +256,7 @@ and forwarded scheme/host headers; it does not change the internal listener to T
 | `WORKSPACES_PUBLIC_ORIGIN` | `http://localhost:4747` | Browser-facing dashboard origin and scheme |
 | `WORKSPACES_BASE_DOMAIN` | `localhost` | Preview hostname suffix |
 | `WORKSPACES_SUBDOMAIN_PREFIX` | `ws-` | Prefix before the workspace ID on preview hosts |
+| `WORKSPACES_REQUIRE` | none | Ruby files, separated like `PATH`, loaded by `serve` to register proxy middleware |
 
 Keep the project root, public origin, preview domain, and storage settings consistent
 across CLI and server processes. Changing the browser-facing origin requires restarting
