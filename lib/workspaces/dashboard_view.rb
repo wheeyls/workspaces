@@ -15,16 +15,16 @@ module Workspaces
         <main class="dashboard"><header class="dashboard__header"><h1>Workspaces</h1></header>
         <section class="status-panel"><h2>Create workspace</h2>
         <p>Choose a branch, PR number, or new branch. Every submission creates a separate managed worktree.</p>
-        <form method="post" action="/workspaces/create">
-          <p><label>Existing branch <input name="branch" placeholder="main"></label></p>
-          <p><label>PR number <input name="pr" inputmode="numeric" placeholder="43828"></label></p>
-          <p><label>New branch <input name="new_branch" placeholder="agent/fix-checkout"></label></p>
-          <p><label>Start new branch from <input name="from" placeholder="HEAD"></label></p>
+        <form method="post" action="/workspaces/create" class="stack">
+          <label class="field">Existing branch <input name="branch" placeholder="main"></label>
+          <label class="field">PR number <input name="pr" inputmode="numeric" placeholder="43828"></label>
+          <label class="field">New branch <input name="new_branch" placeholder="agent/fix-checkout"></label>
+          <label class="field">Start new branch from <input name="from" placeholder="HEAD"></label>
           <button class="button button--primary">Create workspace</button>
         </form></section>
-        <section class="status-panel"><h2>Managed workspaces</h2><ul class="workspace-list">
-        #{workspaces.map { |workspace| view.inventory_item(workspace) }.join}
-        </ul></section></main>
+        <section class="status-panel"><h2>Managed workspaces</h2>
+        #{view.inventory_table(workspaces)}
+        </section></main>
       HTML
     end
 
@@ -90,17 +90,33 @@ module Workspaces
       ERB::Util.html_escape(value.to_s)
     end
 
-    def inventory_item(workspace)
+    # Tabular data gets a real table. The workspace ID is both the row header and the
+    # link, so no separate name/branch/link columns are needed. Narrow screens hide the
+    # date columns and stack each row (see styles.css).
+    def inventory_table(workspaces)
+      return '<p class="muted">No workspaces yet.</p>' if workspaces.empty?
+
+      <<~HTML
+        <table class="workspace-table">
+          <thead><tr><th scope="col">Workspace</th><th scope="col">Status</th><th scope="col" class="workspace-table__date">Created</th><th scope="col" class="workspace-table__date">Last startup</th></tr></thead>
+          <tbody>
+        #{workspaces.map { |workspace| inventory_row(workspace) }.join}
+          </tbody>
+        </table>
+      HTML
+    end
+
+    def inventory_row(workspace)
       id = escape(Config.validate_id!(workspace.fetch('id')))
+      status = escape(workspace['status'] || 'idle')
       running = workspace['running'] ? 'Running' : 'Not running'
       <<~HTML
-        <li class="workspace-list__item">
-          <a href="/workspaces/#{id}">#{id}</a>
-          <span class="muted">#{escape(workspace['branch'])}</span>
-          <span>#{running} · #{escape(workspace['status'] || 'idle')}#{workspace['active'] ? ' (busy)' : ''}</span>
-          <span class="muted">Created <time datetime="#{escape(workspace['created_at'])}">#{escape(workspace['created_at'] || 'Unavailable')}</time></span>
-          <span class="muted">Last startup <time datetime="#{escape(workspace['started_at'])}">#{escape(workspace['started_at'] || 'Never')}</time></span>
-        </li>
+        <tr>
+          <th scope="row"><a href="/workspaces/#{id}">#{id}</a></th>
+          <td><span class="status-pill" data-status="#{status}"><span class="status-dot" aria-hidden="true"></span>#{running} · #{status}#{workspace['active'] ? ' (busy)' : ''}</span></td>
+          <td class="workspace-table__date"><time datetime="#{escape(workspace['created_at'])}">#{escape(workspace['created_at'] || 'Unavailable')}</time></td>
+          <td class="workspace-table__date"><time datetime="#{escape(workspace['started_at'])}">#{escape(workspace['started_at'] || 'Never')}</time></td>
+        </tr>
       HTML
     end
 

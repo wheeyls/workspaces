@@ -1,6 +1,6 @@
 <main class="dashboard" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>">
   <header class="dashboard__header">
-    <div><p class="eyebrow">Managed workspace</p><h1><%= @id %></h1><p><%= field('branch') %></p></div>
+    <div class="dashboard__title"><p class="eyebrow">Managed workspace</p><h1><%= @id %></h1><p class="muted"><%= field('branch') %></p></div>
     <a class="button button--subtle" href="/workspaces">All workspaces</a>
   </header>
   <section class="status-panel" aria-labelledby="status">
@@ -32,11 +32,11 @@
     </div>
     <div class="workspace-settings" data-section="environment" aria-labelledby="environment-overrides" <%= 'hidden' unless section?('environment') %>>
       <h3 id="environment-overrides">Environment</h3>
-      <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" data-environment-form data-environment-presets="<%= escape(environment_presets_json) %>">
+      <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" class="stack" data-environment-form data-environment-presets="<%= escape(environment_presets_json) %>">
         <fieldset class="env-fieldset" data-environment-fieldset <%= 'disabled' if @presentation['busy'] %>>
           <legend class="env-legend">Workspace settings</legend>
           <% unless environment_presets.empty? %>
-            <div data-preset-controls hidden>
+            <div class="stack stack--tight" data-preset-controls hidden>
               <p class="env-input-label" id="environment-preset-label">Preset</p>
               <div class="env-preset-buttons" role="group" aria-labelledby="environment-preset-label" aria-describedby="environment-preset-help">
                 <% environment_presets.each_key do |name| %>
@@ -46,8 +46,10 @@
               <p class="muted" id="environment-preset-help">Presets decide which app this workspace runs. Select one, then use <strong data-submit-label><%= escape(@presentation['environment_submit']) %></strong> to apply it.</p>
             </div>
           <% end %>
-          <label class="env-input-label" for="editable-env">Environment variables</label>
-          <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"><%= escape(editable_environment_text) %></textarea>
+          <div class="stack stack--tight">
+            <label class="env-input-label" for="editable-env">Environment variables</label>
+            <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"><%= escape(editable_environment_text) %></textarea>
+          </div>
         </fieldset>
         <div class="env-actions">
           <button class="button button--primary" data-env-submit <%= 'disabled' if @presentation['busy'] %>><%= escape(@presentation['environment_submit']) %></button>
