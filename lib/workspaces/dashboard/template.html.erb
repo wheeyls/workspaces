@@ -1,37 +1,27 @@
-<main class="dashboard" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>">
+<main class="dashboard" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>" data-disclosure-state="<%= escape(@presentation['state']) %>">
   <header class="dashboard__header">
-    <div class="dashboard__title"><p class="eyebrow">Managed workspace</p><h1><%= @id %></h1><p class="muted"><%= field('branch') %></p></div>
+    <div class="dashboard__title"><p class="eyebrow">Managed workspace</p><h1><%= @id %></h1></div>
     <a class="button button--subtle" href="/workspaces">All workspaces</a>
   </header>
-  <section class="status-panel" aria-labelledby="status">
-    <div class="status-row">
-      <h2 id="status" role="status"><%= escape(@presentation['title']) %></h2>
-      <span id="activity" <%= 'hidden' unless @presentation['busy'] %>><span class="activity-dot" aria-hidden="true"></span> In progress · <span id="elapsed">—</span></span>
+  <section class="status-panel lead" id="lead" data-section="lead" aria-labelledby="status" <%= 'hidden' unless section?('lead') %>>
+    <div class="lead__text">
+      <h2 id="status" role="status"><%= escape(@presentation['headline']) %></h2>
+      <p id="summary" class="lead__summary"><%= escape(@presentation['summary']) %></p>
+      <p id="subtitle" class="muted" <%= 'hidden' unless @presentation['subtitle'] %>><span id="subtitle-text"><%= escape(@presentation['subtitle']) %></span><span id="activity" <%= 'hidden' unless @presentation['busy'] %>> · <span class="activity-dot" aria-hidden="true"></span> <span id="elapsed">—</span></span></p>
     </div>
-    <p id="hint" <%= 'hidden' unless @presentation['hint'] %>><%= escape(@presentation['hint']) %></p>
-    <p id="message" <%= 'hidden' if @presentation['state'] == 'idle' %>><%= field('message') %></p>
-    <ol class="stepper" id="progress" data-section="progress" aria-label="Setup progress" <%= 'hidden' unless section?('progress') %>>
-      <% @presentation['steps'].each do |step| %>
-        <li class="step" data-step-state="<%= step['state'] %>" <%= 'aria-current="step"' if step['state'] == 'active' %>><span class="step-bullet" aria-hidden="true"></span><span><%= escape(step['label']) %></span><span class="step-outcome"><%= escape(step_outcome(step)) %></span></li>
-      <% end %>
-    </ol>
+    <div class="lead__actions">
+      <a id="preview" class="button button--primary button--large" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
+      <div id="lead-action" class="lead__action"><%= lead_action_form(@presentation['lead_action']) %></div>
+    </div>
+    <p id="message" class="muted" hidden><%= field('message') %></p>
     <section class="error-panel setup-error" id="error-panel" role="alert" <%= 'hidden' unless @presentation['error'] %>>
       <h3>What went wrong</h3><pre id="error"><%= escape(@presentation['error']) %></pre>
     </section>
     <p id="connection" role="status"></p>
   </section>
-  <section class="status-panel controls-panel" id="controls" data-section-group aria-labelledby="actions-settings-title" <%= 'hidden' unless section?('actions') || section?('environment') %>>
-    <h2 id="actions-settings-title"><%= escape(@presentation['controls_title']) %></h2>
-    <div class="workspace-actions-group" data-section="actions" aria-labelledby="actions-heading" <%= 'hidden' unless section?('actions') %>>
-      <h3 id="actions-heading">Workspace actions</h3>
-      <div class="workspace-actions">
-        <a id="preview" class="button button--primary" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
-        <div id="actions" class="workspace-actions"><% @presentation['actions'].each do |action| %><%= action_form(action) %><% end %></div>
-      </div>
-      <p id="source-update-message" role="status"><%= field('source_update_message') %></p>
-    </div>
-    <div class="workspace-settings" data-section="environment" aria-labelledby="environment-overrides" <%= 'hidden' unless section?('environment') %>>
-      <h3 id="environment-overrides">Environment</h3>
+  <details class="status-panel disclosure" id="environment-disclosure" data-section="environment" <%= 'open' if @presentation.dig('open', 'environment') %> <%= 'hidden' unless section?('environment') %>>
+    <summary><span id="environment-title"><%= escape(@presentation['environment_title']) %></span><span class="disclosure__hint">Presets and environment variables</span></summary>
+    <div class="workspace-settings" aria-labelledby="environment-title">
       <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" class="stack" data-environment-form data-environment-presets="<%= escape(environment_presets_json) %>">
         <fieldset class="env-fieldset" data-environment-fieldset <%= 'disabled' if @presentation['busy'] %>>
           <legend class="env-legend">Workspace settings</legend>
@@ -57,25 +47,45 @@
         <p class="muted" id="environment-status" role="status" aria-live="polite"></p>
       </form>
     </div>
-  </section>
-  <section class="log-panel" data-section="log" aria-labelledby="log-title" <%= 'hidden' unless section?('log') %>>
-    <div class="log-header"><h2 id="log-title">Live <%= field('log_source') == 'backend' ? 'backend' : 'setup' %> log</h2><time id="updated"><%= field('updated_at') %></time></div>
-    <nav class="log-switch" aria-label="Log source">
-      <a href="?log=setup" data-log-source="setup" <%= 'aria-current="page"' if @snapshot['log_source'] != 'backend' %>>Setup log</a>
-      <a href="?log=backend" data-log-source="backend" <%= 'aria-current="page"' if @snapshot['log_source'] == 'backend' %>>Backend log</a>
-    </nav>
-    <pre id="log" tabindex="0" aria-label="<%= field('log_source') == 'backend' ? 'Backend' : 'Setup' %> log"><%= field('log_tail') %></pre>
-  </section>
-  <details class="status-panel" data-section="details" <%= 'hidden' unless section?('details') %>><summary>Workspace details</summary><dl><dt>Preview URL</dt><dd><a class="detail-link" href="<%= escape(Config.preview_url(@id)) %>" target="_blank" rel="noopener noreferrer"><%= escape(Config.preview_url(@id)) %></a> <span class="muted">Available when ready</span></dd><dt>Branch</dt><dd><%= field('branch') %></dd><dt>Path</dt><dd><code><%= field('path') %></code></dd><dt>Related PR</dt><dd><%= escape(@snapshot.dig('related_pr', 'number') || 'None') %></dd><dt>Created</dt><dd><%= escape(@snapshot['created_at'] || 'Unavailable') %></dd><dt>Last startup</dt><dd><%= escape(@snapshot['started_at'] || 'Never') %></dd></dl></details>
-  <section class="status-panel danger-zone" data-section="danger" aria-labelledby="danger-heading" <%= 'hidden' unless section?('danger') %>>
-    <h2 id="danger-heading">Danger Zone</h2>
-    <p>Deleting this workspace stops its server and removes its worktree. <strong>Discard uncommitted and untracked changes</strong> permanently. The branch and committed work are preserved.</p>
-    <form method="post" action="/workspaces/<%= @id %>/remove" id="remove-form">
-      <label for="confirm-id">Type <code><%= @id %></code> to confirm deletion</label>
-      <input id="confirm-id" name="confirm_id" required autocomplete="off" spellcheck="false" aria-describedby="remove-warning" <%= 'disabled' if @presentation['busy'] %>>
-      <p class="muted" id="remove-warning">This cannot restore uncommitted or untracked files.</p>
-      <button class="button button--danger" <%= 'disabled' if @presentation['busy'] %>>Delete workspace</button>
-    </form>
-  </section>
+  </details>
+  <details class="status-panel disclosure" id="technical-disclosure" data-section="technical" <%= 'open' if @presentation.dig('open', 'technical') %> <%= 'hidden' unless section?('technical') %>>
+    <summary><span>Technical details</span><span class="disclosure__hint">Setup steps, logs and workspace controls</span></summary>
+    <div class="technical stack stack--loose">
+      <ol class="stepper" id="progress" data-section="progress" aria-label="Setup progress" <%= 'hidden' unless section?('progress') %>>
+        <% @presentation['steps'].each do |step| %>
+          <li class="step" data-step-state="<%= step['state'] %>" <%= 'aria-current="step"' if step['state'] == 'active' %>><span class="step-bullet" aria-hidden="true"></span><span><%= escape(step['label']) %></span><span class="step-outcome"><%= escape(step_outcome(step)) %></span></li>
+        <% end %>
+      </ol>
+      <div class="workspace-actions-group stack stack--snug" data-section="actions" aria-labelledby="actions-heading" <%= 'hidden' unless section?('actions') %>>
+        <h3 id="actions-heading">Workspace controls</h3>
+        <div class="workspace-actions">
+          <div id="actions" class="workspace-actions"><% @presentation['actions'].each do |action| %><%= action_form(action) %><% end %></div>
+        </div>
+        <p id="source-update-message" role="status"><%= field('source_update_message') %></p>
+      </div>
+      <section class="log-panel" data-section="log" aria-labelledby="log-title" <%= 'hidden' unless section?('log') %>>
+        <div class="log-header"><h3 id="log-title">Live <%= field('log_source') == 'backend' ? 'backend' : 'setup' %> log</h3><time id="updated"><%= field('updated_at') %></time></div>
+        <nav class="log-switch" aria-label="Log source">
+          <a href="?log=setup" data-log-source="setup" <%= 'aria-current="page"' if @snapshot['log_source'] != 'backend' %>>Setup log</a>
+          <a href="?log=backend" data-log-source="backend" <%= 'aria-current="page"' if @snapshot['log_source'] == 'backend' %>>Backend log</a>
+        </nav>
+        <pre id="log" tabindex="0" aria-label="<%= field('log_source') == 'backend' ? 'Backend' : 'Setup' %> log"><%= field('log_tail') %></pre>
+      </section>
+      <section class="stack stack--snug" data-section="details" <%= 'hidden' unless section?('details') %>>
+        <h3>Workspace details</h3>
+        <dl><dt>Preview URL</dt><dd><a class="detail-link" href="<%= escape(Config.preview_url(@id)) %>" target="_blank" rel="noopener noreferrer"><%= escape(Config.preview_url(@id)) %></a> <span class="muted">Available when ready</span></dd><dt>Branch</dt><dd><%= field('branch') %></dd><dt>Path</dt><dd><code><%= field('path') %></code></dd><dt>Related PR</dt><dd><%= escape(@snapshot.dig('related_pr', 'number') || 'None') %></dd><dt>Created</dt><dd><%= escape(@snapshot['created_at'] || 'Unavailable') %></dd><dt>Last startup</dt><dd><%= escape(@snapshot['started_at'] || 'Never') %></dd></dl>
+      </section>
+      <section class="danger-zone" data-section="danger" aria-labelledby="danger-heading" <%= 'hidden' unless section?('danger') %>>
+        <h3 id="danger-heading">Danger Zone</h3>
+        <p>Deleting this workspace stops its server and removes its worktree. <strong>Discard uncommitted and untracked changes</strong> permanently. The branch and committed work are preserved.</p>
+        <form method="post" action="/workspaces/<%= @id %>/remove" id="remove-form">
+          <label for="confirm-id">Type <code><%= @id %></code> to confirm deletion</label>
+          <input id="confirm-id" name="confirm_id" required autocomplete="off" spellcheck="false" aria-describedby="remove-warning" <%= 'disabled' if @presentation['busy'] %>>
+          <p class="muted" id="remove-warning">This cannot restore uncommitted or untracked files.</p>
+          <button class="button button--danger" <%= 'disabled' if @presentation['busy'] %>>Delete workspace</button>
+        </form>
+      </section>
+    </div>
+  </details>
   <noscript><a href="/workspaces/<%= @id %>">Refresh status</a></noscript>
 </main>
