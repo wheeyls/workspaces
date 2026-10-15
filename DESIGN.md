@@ -48,19 +48,24 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 - **PR source update**: a secondary Update from PR form only for PR-sourced workspaces; it fetches the latest PR head, fast-forwards the checkout, and preserves local edits without rebuilding or restarting. A persistent result message explains when rebuild is needed or when a retained stash needs manual recovery.
 - **Failure panel**: prominently above the log, with escaped error details and a matching retry action.
 - **PR page**: existing workspaces are primary; creating another is a collapsed secondary disclosure. Creation is primary only when none exist.
-- **Lifecycle state machine**: the workspace detail page is driven by `Presentation::STATES`. Each state (`idle`, `busy`, `ready`, `stopped`, `error`/`interrupted`, `unknown`) declares which sections exist (progress, actions, environment, log, details, danger zone) and the label of the single environment-form button. Sections that are not usable or meaningful in a state are hidden, never shown disabled. The server renders the initial state and the polling script re-applies it from `presentation.sections`, so the page transitions without a reload.
-  - `idle` (brand new): only the environment editor plus a **Start workspace** button, with a one-line hint. No log, actions, details, or delete.
-  - `busy` (setup/restart running): only progress and the live log.
-  - `ready`: everything, with **Save & restart**.
-  - `stopped`: no progress from the previous run; **Save & start**.
-  - `error`/`interrupted`: retry action, environment editor, progress, and logs; **Save & retry**.
+- **Three layers**: the workspace page leads with the friendly, the deliberate, then the technical. Each layer is shown or collapsed by lifecycle state, driven by `Presentation::STATES`:
+  1. **Lead** (always visible): a plain-language headline, one sentence, and at most one primary action (a large button). The setup steps never appear here.
+  2. **Settings** (a `<details>` titled *Change settings*, or *Choose what to preview* on a brand new workspace): presets first, as buttons, then the environment variables. The one submit button names what it does (Start workspace, Save & restart, Save & start, Save & retry). It starts open only for a new workspace.
+  3. **Technical details** (one `<details>`): setup steps with timings, the live log, workspace controls (rebuild, restart, stop, update from PR), preview URL, branch and path, and the Danger Zone. It starts collapsed, and opens by itself while setup runs or after a failure so a cause is never hidden.
+- **Lead by state**:
+  - `idle`: "Let's get your workspace running", with the settings open and *Start workspace* in the form.
+  - `busy`: "Setting things up…", with the current step as a quiet line and the elapsed time. Technical details open so progress and the log can be watched.
+  - `ready`: "Your workspace is ready" with a large **Open workspace** button. Everything else is collapsed.
+  - `stopped`: "Your workspace is paused" with a large **Start workspace** button.
+  - `error`/`interrupted`: a plain "Something didn't go to plan" with a large **Retry** button, the error shown, and technical details open.
+  - `unknown`: a minimal view with technical details open.
+- **Disclosure behavior**: the server renders the initial open state and the polling script re-applies it from `presentation.open`, but only when the state changes. A section the user opened or closed is left alone on later polls. Sections that are not meaningful in a state are hidden, never shown disabled.
 - **Action buttons**: start, prepare/rebuild, restart server, stop server, and refresh
-- **Actions & settings panel**: status-adjacent panel that combines routine lifecycle controls, Open workspace, Refresh status, PR update messaging, and editable environment settings so routine operations stay in one keyboard-reachable region.
 - **Open workspace**: success-styled link available when the server is ready
 - **Lifecycle controls**: hidden while busy (see state machine); helper text distinguishes rebuilding from server-only restart
 - **Bounded log panel**: monospace text, fixed max height, manual-scroll-safe updates
 - **Log source switcher**: two native links inside one log panel, with current selection announced through `aria-current`; only the selected bounded log is loaded and refreshed. Setup is the default.
-- **Preview destination**: a small muted URL in Workspace details, visible before readiness; the primary Open workspace action remains reserved for ready servers.
+- **Preview destination**: a small muted URL in Technical details, visible before readiness; the large Open workspace button is reserved for ready servers.
 - **Editable environment**: labelled monospace multiline `NAME=value` control for non-secret recipe defaults and added workspace settings; busy state disables the fieldset and save button, values are escaped in HTML, other legacy overrides remain hidden. Omitted default names revert to recipe defaults; omitted added names are unset.
 - **Environment presets (JS-enhanced)**: optional preset selector is hidden by default and revealed only when JavaScript is active and presets exist. Selecting a preset replaces the entire draft editor content and announces unsaved state without submitting. Draft edits remain local until Save & restart.
 - **Danger Zone**: isolated section on the detail page with explicit loss-of-uncommitted-and-untracked-work copy, an exact-workspace-ID confirmation field, and a destructive action. Deletion remains possible without JavaScript, is disabled while setup is busy, and never appears as a list-row action.

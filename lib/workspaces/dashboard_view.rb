@@ -161,6 +161,15 @@ module Workspaces
       JSON.generate(environment_presets)
     end
 
+    # The lead's primary action. `open` is rendered separately as a link (it needs the
+    # preview URL and must stay a real anchor), so only lifecycle posts produce a form.
+    def lead_action_form(action)
+      return '' unless action && action['kind'] == 'post'
+
+      "<form method=\"post\" action=\"/workspaces/#{@id}/#{action.fetch('key')}\">" \
+        "<button class=\"button button--primary button--large\">#{escape(action.fetch('label'))}</button></form>"
+    end
+
     def action_form(action)
       style = action['primary'] ? 'button--primary' : 'button--subtle'
       "<form method=\"post\" action=\"/workspaces/#{@id}/#{action.fetch('key')}\">" \

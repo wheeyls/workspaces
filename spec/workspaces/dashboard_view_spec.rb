@@ -17,12 +17,15 @@ RSpec.describe Workspaces::DashboardView do
     html = described_class.render(snapshot.merge('editable_environment' => { 'UE_APP' => 'www' }))
     hidden = ->(name) { html.match?(/data-section="#{name}"[^>]*\shidden/) }
 
+    expect(hidden.call('technical')).to eq(true)
     expect(hidden.call('log')).to eq(true)
     expect(hidden.call('actions')).to eq(true)
     expect(hidden.call('details')).to eq(true)
     expect(hidden.call('danger')).to eq(true)
+    expect(hidden.call('lead')).to eq(false)
     expect(hidden.call('environment')).to eq(false)
-    expect(html).to include('Set up your workspace')
+    expect(html).to include("Let&#39;s get your workspace running", 'Choose what to preview')
+    expect(html).to match(/id="environment-disclosure"[^>]*\sopen/)
     expect(html).to match(/data-env-submit\s*>Start workspace<\/button>/)
   end
 
@@ -116,7 +119,7 @@ RSpec.describe Workspaces::DashboardView do
     html = described_class.render(snapshot.merge('environment_keys' => %w(APP_VARIANT SECRET_TOKEN),
                                                   'editable_environment' => { 'APP_VARIANT' => '<admin>' }))
 
-    expect(html).to include('Set up your workspace', '/workspaces/agent-123/environment')
+    expect(html).to include('Choose what to preview', '/workspaces/agent-123/environment')
     expect(html).to include('name="editable_env"', 'APP_VARIANT=&lt;admin&gt;')
     expect(html).not_to include('id="environment-preset"')
     expect(html).not_to include('SECRET_TOKEN=')
@@ -239,21 +242,48 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('disabled>Delete workspace')
   end
 
-  it 'keeps required control ids and order with actions/settings before log and danger zone separate' do
-    html = described_class.render(snapshot)
+  it 'keeps required control ids and orders the page lead, then settings, then technical details' do
+    html = described_class.render(snapshot.merge('status' => 'ready'))
 
     status_index = html.index('id="status"')
-    actions_panel_index = html.index('id="actions-settings-title"')
+    settings_index = html.index('id="environment-disclosure"')
+    technical_index = html.index('id="technical-disclosure"')
     log_index = html.index('id="log-title"')
     danger_index = html.index('Danger Zone')
 
-    expect(status_index).not_to be_nil
-    expect(actions_panel_index).not_to be_nil
-    expect(log_index).not_to be_nil
-    expect(danger_index).not_to be_nil
-    expect(status_index).to be < actions_panel_index
-    expect(actions_panel_index).to be < log_index
+    expect([status_index, settings_index, technical_index, log_index, danger_index]).to all(be_a(Integer))
+    expect(status_index).to be < settings_index
+    expect(settings_index).to be < technical_index
+    expect(technical_index).to be < log_index
     expect(log_index).to be < danger_index
     expect(html).to include('id="actions"', 'id="preview"', 'id="environment-form"', 'id="remove-form"')
+  end
+
+  it 'leads a ready workspace with one Open button and keeps the scary parts inside collapsed technical details' do
+    steps = [{ 'key' => 'deps', 'label' => 'Install Ruby dependencies', 'state' => 'complete' }]
+    html = described_class.render(snapshot.merge('status' => 'ready', 'steps' => steps))
+    technical = html[/<details[^>]*id="technical-disclosure".*?<\/details>/m]
+
+    expect(html).to include('Your workspace is ready')
+    expect(html).to match(/id="preview"[^>]*href="http:\/\/ws-agent-123[^"]*"(?![^>]*\shidden)/)
+    expect(html).not_to match(/id="technical-disclosure"[^>]*\sopen/)
+    expect(html).not_to match(/id="environment-disclosure"[^>]*\sopen/)
+    expect(technical).to include('Install Ruby dependencies', 'Live setup log', 'Danger Zone')
+    expect(html.index('Install Ruby dependencies')).to be > html.index('id="technical-disclosure"')
+  end
+
+  it 'opens the technical details when setup has failed so the cause is visible' do
+    html = described_class.render(snapshot.merge('status' => 'error', 'operation' => 'prepare',
+                                                 'last_error' => 'Build failed'))
+
+    expect(html).to match(/id="technical-disclosure"[^>]*\sopen/)
+    expect(html).to include("Something didn&#39;t go to plan", 'Retry setup')
+  end
+
+  it 'offers a large Start button as the lead action for a stopped workspace' do
+    html = described_class.render(snapshot.merge('status' => 'stopped'))
+
+    expect(html).to include('Your workspace is paused')
+    expect(html).to match(%r{id="lead-action"[^>]*><form method="post" action="/workspaces/agent-123/start"><button class="button button--primary button--large">Start workspace})
   end
 end
