@@ -199,11 +199,28 @@ h1 {
 .disclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .disclosure[open] > summary { border-end-start-radius: 0; border-end-end-radius: 0; border-block-end: 1px solid var(--border); margin-block-end: 0; }
 .disclosure > :not(summary) { margin: var(--panel-padding); }
+/* Which preset is active, readable without opening the section. Same tint as a pressed preset button. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid color-mix(in oklab, var(--success) 55%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--success) 22%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.badge::before { content: ''; inline-size: 6px; block-size: 6px; border-radius: 999px; background: var(--success); }
 .disclosure__hint { color: var(--muted); font-size: 13px; font-weight: 400; }
 @media (prefers-reduced-motion: reduce) { .disclosure > summary, .disclosure > summary::after { transition: none; } }
 .disclosure .technical > section:not(.danger-zone) { padding: 0; border: 0; box-shadow: none; background: none; }
 .disclosure .danger-zone { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--danger); border-radius: var(--radius); }
 .disclosure .log-panel { padding: 0; }
+.log-panel > #log { margin-block-start: 0; }
 .disclosure .danger-zone h3 { color: var(--danger); font-size: 1rem; }
 .disclosure h3 { font-size: 1rem; }
 
@@ -254,60 +271,64 @@ h1 {
   color: var(--text);
 }
 
-.stepper {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--space-2);
-}
-
-.step {
+/* Step logs, in the style of GitHub Actions: one row per recipe step with a status icon,
+   its name, how long it took, and a chevron. Open a row to read just that step's output. */
+.step-logs { display: grid; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.step-log + .step-log { border-block-start: 1px solid var(--border); }
+.step-log > summary {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  color: var(--muted);
-}
-
-.step-bullet {
-  inline-size: 10px;
-  block-size: 10px;
-  border: 2px solid var(--muted);
-  border-radius: 999px;
-}
-
-.step[data-step-state='active'],
-.step[data-step-state='complete'] {
+  padding: var(--space-3) var(--space-4);
+  position: relative;
+  list-style: none;
   color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 120ms ease;
 }
+.step-log > summary::-webkit-details-marker { display: none; }
+.step-log > summary:hover { background: color-mix(in oklab, var(--accent) 8%, transparent); }
+.step-log > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.step-log > summary::after {
+  content: '';
+  flex: none;
+  inline-size: 7px;
+  block-size: 7px;
+  margin-inline-start: var(--space-2);
+  margin-block-start: -3px;
+  border-inline-end: 2px solid var(--muted);
+  border-block-end: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 160ms ease;
+}
+.step-log[open] > summary::after { margin-block-start: -3px; transform: rotate(45deg); }
+.step-log[open] > summary { border-block-end: 1px solid var(--border); }
+.step-log__name { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; font-weight: 600; }
+.step-log__outcome { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.step-log--full > summary { color: var(--muted); }
+.step-log--full .step-log__name { font-weight: 400; }
+.step-log > pre { margin: 0; border: 0; border-radius: 0; max-block-size: min(38dvh, 360px); overflow: auto; }
+/* An empty step reads differently by state. Only workspaces set up before step files existed
+   have a finished step with nothing recorded; their text is still in the full log below. */
+.step-log > pre:empty::before { content: 'No output yet.'; color: var(--muted); }
+.step-log[data-step-state='pending'] > pre:empty::before { content: 'Waiting to start.'; }
+.step-log[data-step-state='complete'] > pre:empty::before,
+.step-log[data-step-state='failed'] > pre:empty::before { content: 'No output was recorded for this step. See the full setup log below.'; }
 
-.step[data-step-state='active'] .step-bullet {
-  border-color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 25%, transparent);
-}
-
-.step[data-step-state='complete'] .step-bullet {
-  border-color: var(--success);
-  background: var(--success);
-}
-
-.step[data-step-state='failed'] {
-  color: color-mix(in oklab, var(--danger) 70%, var(--text));
-}
-
-.step[data-step-state='failed'] .step-bullet {
-  border-color: var(--danger);
-  background: color-mix(in oklab, var(--danger) 45%, transparent);
-}
-
-.step[data-step-state='unknown'] {
-  color: color-mix(in oklab, var(--muted) 80%, var(--text));
-}
-
-.step[data-step-state='unknown'] .step-bullet {
-  border-style: dashed;
-  background: transparent;
-}
+/* The status icon: a ring for waiting, a pulsing ring while running, a check, a cross. */
+.step-log__status { flex: none; inline-size: 16px; block-size: 16px; border: 2px solid var(--muted); border-radius: 999px; position: relative; }
+.step-log[data-step-state='active'] .step-log__status { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 25%, transparent); animation: workspace-pulse 1.5s infinite; }
+.step-log[data-step-state='complete'] .step-log__status { border-color: var(--success); background: var(--success); }
+.step-log[data-step-state='complete'] .step-log__status::after { content: ''; position: absolute; inset-inline-start: 4px; inset-block-start: 1px; inline-size: 4px; block-size: 8px; border-inline-end: 2px solid var(--bg); border-block-end: 2px solid var(--bg); transform: rotate(40deg); }
+.step-log[data-step-state='failed'] .step-log__status { border-color: var(--danger); background: var(--danger); }
+.step-log[data-step-state='failed'] .step-log__status::before,
+.step-log[data-step-state='failed'] .step-log__status::after { content: ''; position: absolute; inset-inline-start: 5px; inset-block-start: 2px; inline-size: 2px; block-size: 8px; background: var(--bg); transform: rotate(45deg); }
+.step-log[data-step-state='failed'] .step-log__status::after { transform: rotate(-45deg); }
+.step-log[data-step-state='failed'] > summary .step-log__name { color: color-mix(in oklab, var(--danger) 70%, var(--text)); }
+.step-log[data-step-state='pending'] > summary .step-log__name { color: var(--muted); font-weight: 400; }
+.step-log[data-step-state='unknown'] .step-log__status { border-style: dashed; }
+@media (prefers-reduced-motion: reduce) { .step-log > summary, .step-log > summary::after, .step-log[data-step-state='active'] .step-log__status { transition: none; animation: none; } }
 
 .env-panel {
   display: grid;
@@ -466,7 +487,7 @@ fieldset:disabled {
 .field { display: grid; gap: var(--space-2); max-inline-size: 28rem; font-size: 14px; }
 .field input { inline-size: 100%; }
 
-ol:not(.stepper) > li + li { margin-block-start: var(--space-2); }
+ol > li + li { margin-block-start: var(--space-2); }
 
 .button--success {
   background: color-mix(in oklab, var(--success) 22%, transparent);

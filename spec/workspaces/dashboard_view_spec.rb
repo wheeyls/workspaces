@@ -29,13 +29,13 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to match(/data-env-submit\s*>Start workspace<\/button>/)
   end
 
-  it 'shows only progress and logs while starting' do
+  it 'shows only the step logs while starting' do
     steps = [{ 'key' => 'deps', 'label' => 'Dependencies', 'state' => 'active' }]
     html = described_class.render(snapshot.merge('status' => 'preparing', 'active' => true, 'steps' => steps))
     hidden = ->(name) { html.match?(/data-section="#{name}"[^>]*\shidden/) }
 
-    expect(hidden.call('progress')).to eq(false)
     expect(hidden.call('log')).to eq(false)
+    expect(html).to include('data-step-log="deps"')
     %w(actions environment details danger).each { |name| expect(hidden.call(name)).to eq(true) }
   end
 
@@ -70,8 +70,8 @@ RSpec.describe Workspaces::DashboardView do
                                                  'last_error' => 'Build failed', 'operation' => 'prepare',
                                                  'steps' => steps))
 
-    expect(html).to include('complete · 12.345s')
-    expect(html).to include('failed · 0.500s')
+    expect(html).to include('complete · 12.3s')
+    expect(html).to include('failed · 0.5s')
   end
 
   it 'shows state only for active pending and missing durations' do
@@ -84,9 +84,9 @@ RSpec.describe Workspaces::DashboardView do
     html = described_class.render(snapshot.merge('active' => true, 'status' => 'preparing',
                                                  'message' => 'Building assets', 'steps' => steps))
 
-    expect(html).to include('<span class="step-outcome">pending</span>')
-    expect(html).to include('<span class="step-outcome">active</span>')
-    expect(html).to include('<span class="step-outcome">complete</span>')
+    expect(html).to include('<span class="step-log__outcome step-outcome">pending</span>')
+    expect(html).to include('<span class="step-log__outcome step-outcome">active</span>')
+    expect(html).to include('<span class="step-log__outcome step-outcome">complete</span>')
     expect(html).not_to include('complete ·')
     expect(html).not_to include('active ·')
     expect(html).not_to include('pending ·')
@@ -102,8 +102,8 @@ RSpec.describe Workspaces::DashboardView do
                                                  'last_error' => 'Build failed', 'operation' => 'prepare',
                                                  'steps' => steps))
 
-    expect(html).to include('<span class="step-outcome">complete</span>')
-    expect(html).to include('<span class="step-outcome">failed</span>')
+    expect(html).to include('<span class="step-log__outcome step-outcome">complete</span>')
+    expect(html).to include('<span class="step-log__outcome step-outcome">failed</span>')
     expect(html).not_to include('complete ·')
     expect(html).not_to include('failed ·')
   end
@@ -156,15 +156,18 @@ RSpec.describe Workspaces::DashboardView do
 
   it 'executes client-side step duration formatting with runtime-safe guards' do
     app_js = File.read(File.join(__dir__, '../../lib/workspaces/dashboard/app.js'))
+    format_fn = app_js.match(/function formatDuration\(seconds\) \{.*?\n  \}\n/m)
     match = app_js.match(/function stepOutcome\(step\) \{.*?\n  \}/m)
-    expect(match).not_to be_nil
+    expect([format_fn, match]).to all(be_truthy)
 
     script = <<~NODE
       const vm = require('node:vm');
+      #{format_fn[0]}
       #{match[0]}
       const cases = [
-        { step: { state: 'complete', duration_seconds: 12.3456 }, expected: 'complete · 12.346s' },
-        { step: { state: 'failed', duration_seconds: 0.5 }, expected: 'failed · 0.500s' },
+        { step: { state: 'complete', duration_seconds: 12.3456 }, expected: 'complete · 12.3s' },
+        { step: { state: 'failed', duration_seconds: 0.5 }, expected: 'failed · 0.5s' },
+        { step: { state: 'complete', duration_seconds: 137 }, expected: 'complete · 2m 17s' },
         { step: { state: 'complete', duration_seconds: null }, expected: 'complete' },
         { step: { state: 'failed', duration_seconds: -1 }, expected: 'failed' },
         { step: { state: 'complete', duration_seconds: Infinity }, expected: 'complete' },
@@ -186,8 +189,10 @@ RSpec.describe Workspaces::DashboardView do
 
     expect(html).to include('Preview URL', 'http://ws-agent-123.localhost:4747/')
     expect(html).to include('Available when ready', 'Live backend log', '&lt;backend only&gt;')
-    expect(html).to include('href="?log=backend" data-log-source="backend" aria-current="page"')
+    expect(html).to match(/href="\?log=backend" id="backend-tab" data-log-source="backend" aria-current="page"/)
     expect(html).not_to include('href="?log=setup" data-log-source="setup" aria-current="page"')
+    expect(html).to match(/id="steps"[^>]*\shidden/)
+    expect(html).to include('aria-label="Web server log"')
     expect(html).to include("'/status?log=' + selectedLog")
     expect(html).to include("busy || selectedLog === 'backend' ? 2000 : 10000")
     expect(html.scan('id="log"').length).to eq(1)
@@ -196,8 +201,8 @@ RSpec.describe Workspaces::DashboardView do
   it 'defaults to setup log when no source is supplied' do
     html = described_class.render(snapshot)
 
-    expect(html).to include('Live setup log', 'href="?log=setup" data-log-source="setup" aria-current="page"')
-    expect(html).to include('aria-label="Setup log"')
+    expect(html).to include('Live setup log', 'href="?log=setup" data-log-source="setup" aria-current="page"', 'Setup steps')
+    expect(html).to include('aria-label="Full setup log"')
   end
 
   it 'isolates force removal in a Danger Zone with a typed ID confirmation' do
@@ -262,7 +267,7 @@ RSpec.describe Workspaces::DashboardView do
   it 'leads a ready workspace with one Open button and keeps the scary parts inside collapsed technical details' do
     steps = [{ 'key' => 'deps', 'label' => 'Install Ruby dependencies', 'state' => 'complete' }]
     html = described_class.render(snapshot.merge('status' => 'ready', 'steps' => steps))
-    technical = html[/<details[^>]*id="technical-disclosure".*?<\/details>/m]
+    technical = html[/<details[^>]*id="technical-disclosure".*<\/main>/m]
 
     expect(html).to include('Your workspace is ready')
     expect(html).to match(/id="preview"[^>]*href="http:\/\/ws-agent-123[^"]*"(?![^>]*\shidden)/)
@@ -270,6 +275,136 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).not_to match(/id="environment-disclosure"[^>]*\sopen/)
     expect(technical).to include('Install Ruby dependencies', 'Live setup log', 'Danger Zone')
     expect(html.index('Install Ruby dependencies')).to be > html.index('id="technical-disclosure"')
+  end
+
+  describe 'current preset badge' do
+    let(:presets) { { 'www' => { 'UE_APP' => 'www' }, '<Admin>' => { 'UE_APP' => 'admin' } } }
+
+    def badge(html)
+      html[/<span class="badge" id="environment-preset-badge"[^>]*>.*?<\/span>/m]
+    end
+
+    it 'shows which preset is active in the closed section header' do
+      html = described_class.render(snapshot.merge('status' => 'ready', 'environment_presets' => presets,
+                                                   'editable_environment' => { 'UE_APP' => 'www' }))
+
+      expect(badge(html)).to eq('<span class="badge" id="environment-preset-badge" >Preset: www</span>')
+      expect(html).not_to match(/id="environment-disclosure"[^>]*\sopen/)
+      expect(html.index('id="environment-preset-badge"')).to be_between(html.index('id="environment-disclosure"'),
+                                                                          html.index('id="environment-form"'))
+    end
+
+    it 'keeps the badge in the page but hidden when no preset matches, so a poll can reveal it' do
+      html = described_class.render(snapshot.merge('environment_presets' => presets,
+                                                   'editable_environment' => { 'UE_APP' => 'custom' }))
+
+      expect(badge(html)).to match(/id="environment-preset-badge" hidden>\s*<\/span>/)
+    end
+
+    it 'escapes the preset name' do
+      html = described_class.render(snapshot.merge('environment_presets' => presets,
+                                                   'editable_environment' => { 'UE_APP' => 'admin' }))
+
+      expect(badge(html)).to include('Preset: &lt;Admin&gt;')
+      expect(html).not_to include('Preset: <Admin>')
+    end
+  end
+
+  describe 'step logs' do
+    let(:steps) do
+      [{ 'key' => 'gems', 'label' => 'Install gems', 'state' => 'complete', 'duration_seconds' => 12.1 },
+       { 'key' => 'app', 'label' => 'Start server', 'state' => 'failed', 'duration_seconds' => 0.5 },
+       { 'key' => 'ready', 'label' => 'Wait for readiness', 'state' => 'pending' }]
+    end
+    let(:step_logs) do
+      { 'gems' => { 'text' => "Bundle <complete>\n", 'truncated' => false },
+        'app' => { 'text' => "boom\nERROR: exited\n", 'truncated' => false } }
+    end
+
+    def render_steps(extra = {})
+      described_class.render(snapshot.merge('status' => 'error', 'operation' => 'prepare', 'steps' => steps,
+                                            'step_logs' => step_logs, 'log_tail' => "==> Install gems\n").merge(extra))
+    end
+
+    def step_markup(html, key)
+      html[/<details class="step-log"[^>]*data-step-log="#{key}".*?<\/details>/m]
+    end
+
+    it 'renders each recipe step as its own accordion carrying only that step\'s output' do
+      html = render_steps
+
+      expect(step_markup(html, 'gems')).to include('Install gems', 'complete · 12.1s', 'Bundle &lt;complete&gt;')
+      expect(step_markup(html, 'gems')).not_to include('boom')
+      expect(step_markup(html, 'app')).to include('Start server', 'boom', 'ERROR: exited')
+      expect(step_markup(html, 'app')).not_to include('Bundle')
+      expect(html).not_to include('<ol class="stepper"')
+    end
+
+    it 'opens running and failed steps and leaves completed and waiting ones closed' do
+      html = render_steps
+
+      expect(step_markup(html, 'gems')).not_to match(/\sopen[\s>]/)
+      expect(step_markup(html, 'app')).to match(/data-step-state="failed" open/)
+      expect(step_markup(html, 'ready')).not_to match(/\sopen[\s>]/)
+      active = described_class.render(snapshot.merge('status' => 'preparing', 'active' => true,
+                                                     'steps' => [steps.first.merge('state' => 'active')]))
+      expect(step_markup(active, 'gems')).to match(/data-step-state="active" open aria-current="step"/)
+    end
+
+    it 'keeps the full setup log reachable as a last, closed accordion after the steps' do
+      html = render_steps
+
+      expect(html.index('data-step-log="ready"')).to be < html.index('id="full-log"')
+      expect(html).to match(/<details class="step-log step-log--full" id="full-log" data-step-log="full">/)
+      expect(html).to include('Full setup log')
+    end
+
+    it 'shows an empty state for a step that has not written anything yet' do
+      expect(step_markup(render_steps, 'ready')).to include('<pre tabindex="0" aria-label="Wait for readiness output"></pre>')
+    end
+
+    it 'offers the Web server log tab only when a backend log exists, and always when viewing it' do
+      expect(render_steps).to match(/id="backend-tab"[^>]*\shidden/)
+      expect(render_steps('backend_log_available' => true)).not_to match(/id="backend-tab"[^>]*\shidden/)
+      expect(render_steps('log_source' => 'backend')).not_to match(/id="backend-tab"[^>]*\shidden/)
+    end
+
+    it 'shows the total run time on the Full setup log row once a run has finished' do
+      all_complete = steps.map { |step| step.merge('state' => 'complete', 'duration_seconds' => 1.0) }
+      done = render_steps('status' => 'ready', 'steps' => all_complete, 'total_seconds' => 137.4)
+      failed = render_steps('total_seconds' => 61.2)
+
+      expect(done).to include('<span class="step-log__outcome" id="full-log-outcome">complete · 2m 17s</span>')
+      expect(failed).to include('id="full-log-outcome">failed · 1m 1s</span>')
+    end
+
+    it 'labels the Full setup log row "in progress" while running and falls back when no total exists' do
+      running = described_class.render(snapshot.merge('status' => 'preparing', 'active' => true, 'total_seconds' => 9,
+                                                      'steps' => [steps.first.merge('state' => 'active')]))
+
+      expect(running).to include('id="full-log-outcome">in progress</span>')
+      expect(render_steps).to include('id="full-log-outcome">everything, in order</span>')
+    end
+
+    it 'writes durations as minutes and seconds, never a large bare seconds count' do
+      long = [{ 'key' => 'gems', 'label' => 'Gems', 'state' => 'complete', 'duration_seconds' => 240.0 },
+              { 'key' => 'app', 'label' => 'App', 'state' => 'complete', 'duration_seconds' => 137.4 },
+              { 'key' => 'ready', 'label' => 'Ready', 'state' => 'complete', 'duration_seconds' => 0.5 }]
+      html = described_class.render(snapshot.merge('status' => 'ready', 'steps' => long, 'step_logs' => {}))
+
+      expect(html).to include('complete · 4m 0s', 'complete · 2m 17s', 'complete · 0.5s')
+      expect(html).not_to match(/complete · \d{3,}s/)
+    end
+
+    it 'escapes step names and output' do
+      html = described_class.render(snapshot.merge(
+        'steps' => [{ 'key' => 'x', 'label' => '<b>step</b>', 'state' => 'complete' }],
+        'step_logs' => { 'x' => { 'text' => '<script>alert(1)</script>', 'truncated' => false } }
+      ))
+
+      expect(html).not_to include('<b>step</b>', '<script>alert(1)</script>')
+      expect(html).to include('&lt;b&gt;step&lt;/b&gt;', '&lt;script&gt;alert(1)&lt;/script&gt;')
+    end
   end
 
   it 'opens the technical details when setup has failed so the cause is visible' do

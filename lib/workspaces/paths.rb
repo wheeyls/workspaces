@@ -35,6 +35,17 @@ module Workspaces
       logs_dir(create: create).join("#{workspace_id}.setup.log")
     end
 
+    # One file per recipe step, written as the step runs. The combined setup log is unchanged.
+    def step_logs_dir(workspace_id, create: true)
+      logs_dir(create: create).join("#{workspace_id}.steps").tap { |path| path.mkpath if create }
+    end
+
+    def step_log_path(workspace_id, step_id, create: true)
+      raise ArgumentError, 'Unsafe step id' unless step_id.to_s.match?(/\A[a-z][a-z0-9_-]*\z/)
+
+      step_logs_dir(workspace_id, create: create).join("#{step_id}.log")
+    end
+
     def backend_log_path(workspace_id, create: true)
       logs_dir(create: create).join("#{workspace_id}.backend.log")
     end

@@ -3,12 +3,15 @@ require_relative 'recipe'
 require_relative 'command_runner'
 require_relative 'backend'
 require_relative 'environment_overrides'
+require_relative 'step_log'
+require_relative 'duration_format'
 
 module Workspaces
   class Workflow
     def initialize(workspace, log, state: StateStore.new(Config.state_file))
       @workspace = workspace
-      @log = log
+      @combined_log = log
+      @log = StepLog.new(log, workspace.id)
       @state = state
       @backend = Backend.new(workspace.id)
     end
@@ -18,6 +21,7 @@ module Workspaces
       overrides = EnvironmentOverrides.new(@workspace.id).load
       steps = recipe.for_operation(restart: restart)
       publish_steps(steps)
+      StepLog.reset(@workspace.id)
       @backend.stop!
       context = build_context(@backend.reserve!)
       runner = CommandRunner.new(@workspace.path, @log)
@@ -27,6 +31,8 @@ module Workspaces
     rescue StandardError
       @backend.stop!
       raise
+    ensure
+      @log.finish_step
     end
 
     private
@@ -50,6 +56,7 @@ module Workspaces
     def execute(step, recipe, context, runner, overrides)
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       progress(step, 'active')
+      @log.begin_step(step.fetch('id'))
       @log.puts "==> #{step.fetch('name')}"
       command = recipe.command(step, context)
       env = recipe.env(step, context, overrides: overrides)
@@ -60,7 +67,10 @@ module Workspaces
         @backend.ensure_alive! if @server_started
       end
       @server_started = true if step['background']
-    rescue StandardError
+    rescue StandardError => e
+      # The reason a step failed is not command output, so the step file would otherwise end
+      # without it. Record it where the step's own accordion can show it.
+      @log.puts "ERROR: #{e.message}"
       finish_step(step, 'failed', started_at)
       raise
     else
@@ -70,7 +80,7 @@ module Workspaces
     def finish_step(step, status, started_at)
       duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).round(3)
       progress(step, status, duration_seconds: duration)
-      @log.puts format('==> %s %s (%.3fs)', step.fetch('name'), status, duration)
+      @log.puts format('==> %s %s (%s)', step.fetch('name'), status, DurationFormat.call(duration))
     end
 
     def progress(step, status, duration_seconds: nil)

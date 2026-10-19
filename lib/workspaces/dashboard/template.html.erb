@@ -20,7 +20,7 @@
     <p id="connection" role="status"></p>
   </section>
   <details class="status-panel disclosure" id="environment-disclosure" data-section="environment" <%= 'open' if @presentation.dig('open', 'environment') %> <%= 'hidden' unless section?('environment') %>>
-    <summary><span id="environment-title"><%= escape(@presentation['environment_title']) %></span><span class="disclosure__hint">Presets and environment variables</span></summary>
+    <summary><span id="environment-title"><%= escape(@presentation['environment_title']) %></span><span class="badge" id="environment-preset-badge" <%= 'hidden' unless @presentation['current_preset'] %>><%= escape(preset_badge_text) %></span><span class="disclosure__hint">Presets and environment variables</span></summary>
     <div class="workspace-settings" aria-labelledby="environment-title">
       <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" class="stack" data-environment-form data-environment-presets="<%= escape(environment_presets_json) %>">
         <fieldset class="env-fieldset" data-environment-fieldset <%= 'disabled' if @presentation['busy'] %>>
@@ -51,11 +51,6 @@
   <details class="status-panel disclosure" id="technical-disclosure" data-section="technical" <%= 'open' if @presentation.dig('open', 'technical') %> <%= 'hidden' unless section?('technical') %>>
     <summary><span>Technical details</span><span class="disclosure__hint">Setup steps, logs and workspace controls</span></summary>
     <div class="technical stack stack--loose">
-      <ol class="stepper" id="progress" data-section="progress" aria-label="Setup progress" <%= 'hidden' unless section?('progress') %>>
-        <% @presentation['steps'].each do |step| %>
-          <li class="step" data-step-state="<%= step['state'] %>" <%= 'aria-current="step"' if step['state'] == 'active' %>><span class="step-bullet" aria-hidden="true"></span><span><%= escape(step['label']) %></span><span class="step-outcome"><%= escape(step_outcome(step)) %></span></li>
-        <% end %>
-      </ol>
       <div class="workspace-actions-group stack stack--snug" data-section="actions" aria-labelledby="actions-heading" <%= 'hidden' unless section?('actions') %>>
         <h3 id="actions-heading">Workspace controls</h3>
         <div class="workspace-actions">
@@ -66,10 +61,17 @@
       <section class="log-panel" data-section="log" aria-labelledby="log-title" <%= 'hidden' unless section?('log') %>>
         <div class="log-header"><h3 id="log-title">Live <%= field('log_source') == 'backend' ? 'backend' : 'setup' %> log</h3><time id="updated"><%= field('updated_at') %></time></div>
         <nav class="log-switch" aria-label="Log source">
-          <a href="?log=setup" data-log-source="setup" <%= 'aria-current="page"' if @snapshot['log_source'] != 'backend' %>>Setup log</a>
-          <a href="?log=backend" data-log-source="backend" <%= 'aria-current="page"' if @snapshot['log_source'] == 'backend' %>>Backend log</a>
+          <a href="?log=setup" data-log-source="setup" <%= 'aria-current="page"' if @snapshot['log_source'] != 'backend' %>>Setup steps</a>
+          <a href="?log=backend" id="backend-tab" data-log-source="backend" <%= 'aria-current="page"' if @snapshot['log_source'] == 'backend' %> <%= 'hidden' unless backend_tab? %>>Web server log</a>
         </nav>
-        <pre id="log" tabindex="0" aria-label="<%= field('log_source') == 'backend' ? 'Backend' : 'Setup' %> log"><%= field('log_tail') %></pre>
+        <div id="steps" class="step-logs" data-step-logs <%= 'hidden' if @snapshot['log_source'] == 'backend' %>>
+          <% @presentation['steps'].each do |step| %><%= step_accordion(step) %><% end %>
+          <details class="step-log step-log--full" id="full-log" data-step-log="full">
+            <summary><span class="step-log__status" aria-hidden="true"></span><span class="step-log__name">Full setup log</span><span class="step-log__outcome" id="full-log-outcome"><%= escape(full_log_outcome) %></span></summary>
+            <pre tabindex="0" aria-label="Full setup log"><%= field('log_tail') if @snapshot['log_source'] != 'backend' %></pre>
+          </details>
+        </div>
+        <pre id="log" tabindex="0" aria-label="Web server log" <%= 'hidden' unless @snapshot['log_source'] == 'backend' %>><%= field('log_tail') if @snapshot['log_source'] == 'backend' %></pre>
       </section>
       <section class="stack stack--snug" data-section="details" <%= 'hidden' unless section?('details') %>>
         <h3>Workspace details</h3>

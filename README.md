@@ -42,13 +42,17 @@ create from a pull request with `create --pr NUMBER`, or create a new branch wit
 ### Step timings
 
 Per-step durations are persisted in seconds in workspace step status JSON, so they
-remain available after the command exits. Timings also appear in CLI progress,
-the workspace setup log, and the dashboard's step list.
+remain available after the command exits, along with the wall-clock `total_seconds` of
+the last run. Timings also appear in CLI progress, the workspace setup log, and the
+dashboard. Everywhere they are shown as `0.5s`, `12.3s`, `1m 10s` or `1h 5m 3s`, never
+as a large bare seconds count. The dashboard's Full setup log row shows the total
+(`complete · 2m 17s`).
 
 A background step measures only process launch, not the server's lifetime or
 readiness. The following readiness step measures its own wait separately.
 Interrupted steps have no recorded duration. Step timings are not the total
-workflow wall-clock time; orchestration overhead can fall outside the steps.
+workflow wall-clock time; orchestration overhead can fall outside the steps, which is
+why the total is measured separately and is usually a little larger than their sum.
 
 ## Serve the dashboard and previews
 

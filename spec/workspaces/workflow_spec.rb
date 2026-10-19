@@ -17,7 +17,7 @@ RSpec.describe Workspaces::Workflow do
       @clock = 100.0
       allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) { @clock }
       allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
-      allow(Workspaces::CommandRunner).to receive(:new).with(root, log).and_return(runner)
+      allow(Workspaces::CommandRunner).to receive(:new).with(root, an_instance_of(Workspaces::StepLog)).and_return(runner)
       allow(runner).to receive(:run!) do |command, **_options|
         key = command.last.include?('setup') ? 'setup' : 'ready'
         expect(state.get(workspace.id)['steps'].find { |step| step['key'] == key })
@@ -44,10 +44,10 @@ RSpec.describe Workspaces::Workflow do
         include('key' => 'app', 'state' => 'complete', 'duration_seconds' => 0.5),
         include('key' => 'ready', 'state' => 'complete', 'duration_seconds' => 1.5)
       ])
-      expect(log.string.lines.grep(/\(\d+\.\d{3}s\)/)).to eq([
-        "==> Fixture setup complete (0.124s)\n",
-        "==> Fixture server complete (0.500s)\n",
-        "==> Fixture readiness complete (1.500s)\n"
+      expect(log.string.lines.grep(/\(\d[^)]*s\)/)).to eq([
+        "==> Fixture setup complete (0.1s)\n",
+        "==> Fixture server complete (0.5s)\n",
+        "==> Fixture readiness complete (1.5s)\n"
       ])
     end
 
@@ -60,7 +60,7 @@ RSpec.describe Workspaces::Workflow do
       steps = state.get(workspace.id)['steps']
       expect(steps.first).to include('state' => 'failed', 'duration_seconds' => 2.346)
       expect(steps.drop(1)).to all(include('state' => 'pending', 'duration_seconds' => nil))
-      expect(log.string.lines.grep(/\(\d+\.\d{3}s\)/)).to eq(["==> Fixture setup failed (2.346s)\n"])
+      expect(log.string.lines.grep(/\(\d[^)]*s\)/)).to eq(["==> Fixture setup failed (2.3s)\n"])
       expect(backend).to have_received(:stop!).twice
     end
 
@@ -71,7 +71,7 @@ RSpec.describe Workspaces::Workflow do
 
       expect(state.get(workspace.id)['steps'].last).to include('state' => 'failed', 'duration_seconds' => 2.0)
       expect(log.string.lines.grep(/Fixture readiness (?:complete|failed)/))
-        .to eq(["==> Fixture readiness failed (2.000s)\n"])
+        .to eq(["==> Fixture readiness failed (2s)\n"])
       expect(backend).to have_received(:stop!).twice
     end
 
@@ -83,7 +83,7 @@ RSpec.describe Workspaces::Workflow do
       expect(state.get(workspace.id)['steps'][1]).to include('state' => 'failed', 'duration_seconds' => 0.063)
       expect(state.get(workspace.id)['steps'].last).to include('state' => 'pending', 'duration_seconds' => nil)
       expect(log.string.lines.grep(/Fixture server (?:complete|failed)/))
-        .to eq(["==> Fixture server failed (0.063s)\n"])
+        .to eq(["==> Fixture server failed (0.1s)\n"])
     end
 
     it 'replaces previous timings on restart and measures only launch and readiness' do
@@ -105,9 +105,9 @@ RSpec.describe Workspaces::Workflow do
         include('key' => 'ready', 'state' => 'complete', 'duration_seconds' => 1.5)
       ])
       expect(runner).to have_received(:run!).once
-      expect(log.string.lines.grep(/\(\d+\.\d{3}s\)/)).to eq([
-        "==> Fixture server complete (0.500s)\n",
-        "==> Fixture readiness complete (1.500s)\n"
+      expect(log.string.lines.grep(/\(\d[^)]*s\)/)).to eq([
+        "==> Fixture server complete (0.5s)\n",
+        "==> Fixture readiness complete (1.5s)\n"
       ])
     end
   end
@@ -188,6 +188,35 @@ RSpec.describe Workspaces::Workflow do
     expect(workspace.path.join('provisioned').read.lines.last).to eq("override|${WORKSPACE_PORT}|#{backend.port}\n")
   ensure
     backend&.stop!
+  end
+
+  it 'splits a real run\'s output by step, records a failure in its own step, and resets on restart' do
+    install_recipe
+    recipe = YAML.safe_load(root.join('.workspaces.yml').read)
+    recipe['steps'][0]['run'] = ['ruby', '-e', 'puts "provision output"']
+    recipe['steps'].last['run'] = ['ruby', '-e', 'puts "checking"; warn "readiness failed"; exit 9']
+    root.join('.workspaces.yml').write(YAML.dump(recipe))
+    workspace = Workspaces::Registry.new.create(branch: 'main')
+    coordinator = Workspaces::Coordinator.new
+    id = workspace.id
+
+    coordinator.start(id)
+    snapshot = coordinator.wait(id)
+    logs = snapshot.fetch('step_logs')
+
+    expect(snapshot['status']).to eq('error')
+    expect(logs.keys).to match_array(%w(provision app ready))
+    expect(logs['provision']['text']).to include('provision output')
+    expect(logs['provision']['text']).not_to include('readiness failed')
+    expect(logs['ready']['text']).to include('checking', 'readiness failed', 'ERROR: Command exited with status 9')
+    expect(logs['ready']['text']).not_to include('provision output')
+    expect(snapshot['log_tail']).to include('provision output', 'readiness failed')
+
+    coordinator.restart(id)
+    restarted = coordinator.wait(id)
+    expect(restarted['step_logs'].keys).to match_array(%w(app ready))
+  ensure
+    Workspaces::Backend.new(id).stop! if id
   end
 
   it 'cleans up the server and reports the failed readiness step' do

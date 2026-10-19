@@ -61,6 +61,7 @@ RSpec.describe 'dashboard lead rendering' do
       const error = mk('pre', 'error'), errorPanel = mk('section', 'error-panel', { hidden: true });
       const connection = mk('p', 'connection');
       const envTitle = mk('span', 'environment-title');
+      const presetBadge = mk('span', 'environment-preset-badge', { hidden: true });
       const envDisclosure = mk('details', 'environment-disclosure', { dataset: { section: '' } });
       const techDisclosure = mk('details', 'technical-disclosure', { dataset: { section: '' } });
       const progress = mk('ol', 'progress', { dataset: { section: '' } });
@@ -69,7 +70,7 @@ RSpec.describe 'dashboard lead rendering' do
       const log = mk('pre', 'log'); log.clientHeight = 1; log.scrollHeight = 1; log.scrollTop = 0;
       const updated = mk('time', 'updated');
       root.append(status, summary, subtitle, subtitleText, activity, elapsed, preview, leadAction, message, error, errorPanel,
-        connection, envTitle, envDisclosure, techDisclosure, progress, actions, srcMsg, log, updated);
+        connection, envTitle, presetBadge, envDisclosure, techDisclosure, progress, actions, srcMsg, log, updated);
 
       const timers = []; const responses = input.polls.slice();
       const context = {
@@ -97,7 +98,8 @@ RSpec.describe 'dashboard lead rendering' do
               label: leadAction.children[0].children[0].textContent,
               klass: leadAction.children[0].children[0].className } : null,
             envOpen: envDisclosure.open, techOpen: techDisclosure.open,
-            envTitle: envTitle.textContent
+            envTitle: envTitle.textContent,
+            badgeHidden: presetBadge.hidden, badgeText: presetBadge.textContent
           });
         }
         process.stdout.write(JSON.stringify(snaps));
@@ -152,6 +154,17 @@ RSpec.describe 'dashboard lead rendering' do
 
     expect(snaps.map { |s| s['techOpen'] }).to eq([false, false])
     expect(snaps.map { |s| s['headline'] }).to eq(['headline for ready', 'headline for ready'])
+  end
+
+  it 'shows, updates and clears the current preset badge as the settings change, without a reload' do
+    none = poll('ready')
+    www = poll('ready', 'current_preset' => 'www')
+    admin = poll('ready', 'current_preset' => 'admin')
+
+    a, b, c, d = run_scenarios(initial_state: 'ready', polls: [none, www, admin, none])
+
+    expect([a, b, c, d].map { |s| [s['badgeHidden'], s['badgeText']] })
+      .to eq([[true, ''], [false, 'Preset: www'], [false, 'Preset: admin'], [true, '']])
   end
 
   it 'does not rebuild the lead action when nothing changed' do
