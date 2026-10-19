@@ -10,9 +10,10 @@ module Workspaces
     # most one primary action. `environment` (presets and variables) is the area for
     # deliberately changing something. `technical` is one disclosure holding setup steps,
     # logs, workspace details, lifecycle controls and deletion; it is never the first thing
-    # a user reads, but it opens by itself when something needs attention.
-    SECTIONS = %w(lead progress actions environment technical log details danger).freeze
-    TECHNICAL = %w(technical progress actions log details danger).freeze
+    # a user reads, but it opens by itself when something needs attention. Setup steps are
+    # not a section of their own: each is an accordion with its own log inside `log`.
+    SECTIONS = %w(lead actions environment technical log details danger).freeze
+    TECHNICAL = %w(technical actions log details danger).freeze
 
     # Workspace lifecycle state machine. Each state declares only what is usable and
     # meaningful there; everything else is hidden rather than shown disabled.
@@ -38,7 +39,7 @@ module Workspaces
         open_environment: true, open_technical: false
       },
       'busy' => {
-        sections: %w(lead technical progress log),
+        sections: %w(lead technical log),
         headline: 'Setting things up…',
         summary: "This usually takes a few minutes. We'll take you to the preview when it's ready.",
         environment_submit: 'Save & restart', environment_title: 'Change settings',
@@ -90,7 +91,8 @@ module Workspaces
         'actions' => actions, 'ready' => status == 'ready' && !busy?,
         'state' => state, 'sections' => sections,
         'headline' => definition[:headline], 'summary' => definition[:summary],
-        'subtitle' => subtitle, 'lead_action' => lead_action,
+        'subtitle' => subtitle, 'lead_action' => lead_action, 'total' => total,
+        'current_preset' => current_preset,
         'environment_title' => definition[:environment_title],
         'environment_submit' => definition[:environment_submit],
         'open' => { 'environment' => definition[:open_environment], 'technical' => definition[:open_technical] } }
@@ -117,8 +119,7 @@ module Workspaces
     end
 
     def sections
-      visible = definition[:sections].dup
-      visible.delete('progress') if steps.empty? || %w(idle stopped).include?(state)
+      visible = definition[:sections]
       SECTIONS.to_h { |name| [name, visible.include?(name)] }
     end
 
@@ -130,6 +131,32 @@ module Workspaces
       when 'stopped' then { 'kind' => 'post', 'key' => 'start', 'label' => 'Start workspace' }
       when 'error', 'interrupted' then retry_action.merge('kind' => 'post')
       end
+    end
+
+    # The preset whose values exactly equal the workspace's saved editable settings, or nil when
+    # there are no presets or the settings match none (for example after a hand edit). Presets
+    # arrive already completed with the recipe defaults, so equality is a plain comparison.
+    def current_preset
+      presets = @snapshot['environment_presets']
+      current = @snapshot['editable_environment']
+      return nil unless presets.is_a?(Hash) && current.is_a?(Hash) && !current.empty?
+
+      normalized = stringify(current)
+      presets.find { |_name, values| values.is_a?(Hash) && stringify(values) == normalized }&.first&.to_s
+    end
+
+    def stringify(values)
+      values.to_h { |name, value| [name.to_s, value.to_s] }
+    end
+
+    # How long the last run took and how it ended, or nil while one is in progress or when no
+    # total was recorded (interrupted runs, and workspaces set up before totals were persisted).
+    def total
+      seconds = @snapshot['total_seconds']
+      return nil if busy? || !seconds.is_a?(Numeric)
+
+      failed = status == 'error' || steps.any? { |step| step['state'] == 'failed' }
+      { 'state' => failed ? 'failed' : 'complete', 'seconds' => seconds }
     end
 
     # What is happening right now, in the quiet line under the headline.

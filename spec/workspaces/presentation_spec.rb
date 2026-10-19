@@ -27,7 +27,7 @@ RSpec.describe Workspaces::Presentation do
     view = present('status' => 'preparing', 'active' => true, 'steps' => steps)
 
     expect(view['state']).to eq('busy')
-    expect(visible(view)).to eq(%w(lead progress technical log))
+    expect(visible(view)).to eq(%w(lead technical log))
     expect(view['actions']).to eq([])
     expect(view['lead_action']).to be_nil
     expect(view['open']).to eq('environment' => false, 'technical' => true)
@@ -54,7 +54,7 @@ RSpec.describe Workspaces::Presentation do
     expect(view['state']).to eq('ready')
     expect(view['headline']).to eq('Your workspace is ready')
     expect(view['lead_action']).to eq('kind' => 'open', 'label' => 'Open workspace')
-    expect(visible(view)).to eq(%w(lead progress actions environment technical log details danger))
+    expect(visible(view)).to eq(%w(lead actions environment technical log details danger))
     expect(view['open']).to eq('environment' => false, 'technical' => false)
     expect(view['environment_submit']).to eq('Save & restart')
     expect(view['ready']).to eq(true)
@@ -69,7 +69,7 @@ RSpec.describe Workspaces::Presentation do
     view = present('status' => 'error', 'operation' => 'prepare', 'last_error' => 'boom', 'steps' => steps)
 
     expect(view['state']).to eq('error')
-    expect(visible(view)).to include('lead', 'technical', 'progress', 'actions', 'environment', 'log')
+    expect(visible(view)).to include('lead', 'technical', 'actions', 'environment', 'log')
     expect(view['environment_submit']).to eq('Save & retry')
     expect(view['actions'].map { |a| a['label'] }).to eq(['Retry setup'])
   end
@@ -97,6 +97,56 @@ RSpec.describe Workspaces::Presentation do
     expect(view['state']).to eq('stopped')
     expect(visible(view)).to eq(%w(lead actions environment technical log details danger))
     expect(view['environment_submit']).to eq('Save & start')
+  end
+
+  describe 'current preset' do
+    let(:presets) do
+      { 'www' => { 'UE_APP' => 'www', 'STRICT' => 'true' }, 'admin' => { 'UE_APP' => 'admin', 'STRICT' => 'true' } }
+    end
+
+    it 'names the preset whose values exactly match the saved settings' do
+      view = present('environment_presets' => presets, 'editable_environment' => { 'UE_APP' => 'admin', 'STRICT' => 'true' })
+
+      expect(view['current_preset']).to eq('admin')
+    end
+
+    it 'is nil when the settings match none, such as after a hand edit or an added variable' do
+      edited = present('environment_presets' => presets, 'editable_environment' => { 'UE_APP' => 'admin', 'STRICT' => 'false' })
+      extra = present('environment_presets' => presets,
+                      'editable_environment' => { 'UE_APP' => 'www', 'STRICT' => 'true', 'EXTRA' => '1' })
+
+      expect([edited['current_preset'], extra['current_preset']]).to eq([nil, nil])
+    end
+
+    it 'is nil without presets or without settings, and tolerates non-string values and older snapshots' do
+      expect(present('editable_environment' => { 'UE_APP' => 'www' })['current_preset']).to be_nil
+      expect(present('environment_presets' => presets, 'editable_environment' => {})['current_preset']).to be_nil
+      expect(present('environment_presets' => nil, 'editable_environment' => nil)['current_preset']).to be_nil
+      numeric = present('environment_presets' => { 'on' => { 'LEVEL' => '1' } }, 'editable_environment' => { 'LEVEL' => 1 })
+      expect(numeric['current_preset']).to eq('on')
+    end
+
+    it 'breaks a tie by the recipe\'s order when two presets have identical values' do
+      same = { 'first' => { 'A' => '1' }, 'second' => { 'A' => '1' } }
+
+      expect(present('environment_presets' => same, 'editable_environment' => { 'A' => '1' })['current_preset']).to eq('first')
+    end
+  end
+
+  describe 'total run time' do
+    it 'reports how a finished run ended and how long it took' do
+      done = present('status' => 'ready', 'total_seconds' => 137.4)
+      failed = present('status' => 'error', 'total_seconds' => 61, 'steps' => [{ 'key' => 'a', 'label' => 'A', 'state' => 'failed' }])
+
+      expect(done['total']).to eq('state' => 'complete', 'seconds' => 137.4)
+      expect(failed['total']).to eq('state' => 'failed', 'seconds' => 61)
+    end
+
+    it 'has no total while a run is in progress, when none was recorded, or for interrupted runs' do
+      expect(present('status' => 'preparing', 'active' => true, 'total_seconds' => 5)['total']).to be_nil
+      expect(present('status' => 'ready')['total']).to be_nil
+      expect(present('status' => 'interrupted', 'total_seconds' => nil)['total']).to be_nil
+    end
   end
 
   it 'falls back to a minimal read-only view for unrecognised statuses' do

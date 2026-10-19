@@ -2,6 +2,7 @@ require 'erb'
 require 'json'
 require_relative 'config'
 require_relative 'presentation'
+require_relative 'duration_format'
 
 module Workspaces
   class DashboardView
@@ -176,14 +177,46 @@ module Workspaces
         "<button class=\"button #{style}\">#{escape(action.fetch('label'))}</button></form>"
     end
 
+    # The Full setup log row's right-hand label: how the last run ended and how long it took.
+    def full_log_outcome
+      return 'in progress' if @presentation['busy']
+
+      total = @presentation['total']
+      text = total && DurationFormat.call(total['seconds'])
+      text ? "#{total['state']} · #{text}" : 'everything, in order'
+    end
+
+    def preset_badge_text
+      name = @presentation['current_preset']
+      name ? "Preset: #{name}" : ''
+    end
+
+    def backend_tab?
+      @snapshot['log_source'] == 'backend' || @snapshot['backend_log_available']
+    end
+
+    # One GitHub-Actions-style accordion per recipe step. A step that is running or has
+    # failed starts open; a completed or not-yet-started one starts closed.
+    def step_accordion(step)
+      key = escape(step['key'])
+      state = escape(step['state'])
+      entry = (@snapshot['step_logs'] || {})[step['key']]
+      open = %w(active failed).include?(step['state']) ? ' open' : ''
+      current = step['state'] == 'active' ? ' aria-current="step"' : ''
+      <<~HTML
+        <details class="step-log" data-step-log="#{key}" data-step-state="#{state}"#{open}#{current}>
+          <summary><span class="step-log__status" aria-hidden="true"></span><span class="step-log__name">#{escape(step['label'])}</span><span class="step-log__outcome step-outcome">#{escape(step_outcome(step))}</span></summary>
+          <pre tabindex="0" aria-label="#{escape(step['label'])} output">#{entry ? escape(entry['text']) : ''}</pre>
+        </details>
+      HTML
+    end
+
     def step_outcome(step)
       state = step['state'].to_s
       return state unless %w(complete failed).include?(state)
 
-      duration = step['duration_seconds']
-      return state unless duration.is_a?(Numeric) && duration.finite? && duration >= 0
-
-      "#{state} · #{format('%.3f', duration)}s"
+      text = DurationFormat.call(step['duration_seconds'])
+      text ? "#{state} · #{text}" : state
     end
   end
 end
