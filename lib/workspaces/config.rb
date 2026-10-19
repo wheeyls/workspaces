@@ -10,6 +10,9 @@ module Workspaces
 
     SAFE_LOG_BYTES = 8 * 1024
     SAFE_LOG_LINES = 100
+    # Each step shows its own tail, so the per-step bounds are smaller than the combined log's.
+    STEP_LOG_BYTES = 6 * 1024
+    STEP_LOG_LINES = 80
     DEFAULT_HOME = File.expand_path('~/.workspaces')
     DEFAULT_SUBDOMAIN_PREFIX = 'ws-'
     DEFAULT_FRONT_DOOR_PORT = 4747

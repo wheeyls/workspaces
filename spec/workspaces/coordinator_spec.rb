@@ -260,6 +260,112 @@ RSpec.describe Workspaces::Coordinator do
     expect { coordinator.snapshot(id, log: 'wrong') }.to raise_error(ArgumentError, /Unknown workspace log/)
   end
 
+  describe 'total run time' do
+    def run_once(recipe_steps)
+      path = Workspaces::Config.repo_root.join('.workspaces.yml')
+      recipe = YAML.safe_load(path.read)
+      recipe['steps'] = recipe_steps
+      path.write(YAML.dump(recipe))
+      coordinator = described_class.new
+      coordinator.start(workspace.id)
+      coordinator.wait(workspace.id)
+    end
+
+    it 'persists the wall-clock time of a finished run, covering more than the steps alone' do
+      snapshot = run_once([{ 'id' => 'wait', 'name' => 'Wait', 'run' => ['ruby', '-e', 'sleep 0.3'] },
+                           { 'id' => 'app', 'name' => 'App', 'run' => ['ruby', '-e', 'sleep 30'], 'background' => true },
+                           { 'id' => 'ready', 'name' => 'Ready', 'run' => ['ruby', '-e', 'puts 1'] }])
+
+      expect(snapshot['status']).to eq('ready')
+      step_total = snapshot['steps'].sum { |step| step['duration_seconds'] }
+      expect(snapshot['total_seconds']).to be >= 0.3
+      # Step durations are each rounded to the millisecond, so allow for that rounding.
+      expect(snapshot['total_seconds']).to be >= step_total - 0.01
+      expect(Workspaces::StateStore.new(Workspaces::Config.state_file).get(workspace.id)['total_seconds'])
+        .to eq(snapshot['total_seconds'])
+    ensure
+      Workspaces::Backend.new(workspace.id).stop!
+    end
+
+    it 'persists the time a failed run took before it stopped' do
+      snapshot = run_once([{ 'id' => 'boom', 'name' => 'Boom', 'run' => ['ruby', '-e', 'sleep 0.2; exit 3'] },
+                           { 'id' => 'app', 'name' => 'App', 'run' => ['ruby', '-e', 'sleep 30'], 'background' => true },
+                           { 'id' => 'ready', 'name' => 'Ready', 'run' => ['ruby', '-e', 'puts 1'] }])
+
+      expect(snapshot['status']).to eq('error')
+      expect(snapshot['total_seconds']).to be >= 0.2
+    end
+
+    it 'clears the previous total when a new run starts' do
+      Workspaces::StateStore.new(Workspaces::Config.state_file)
+                            .set(workspace.id, 'status' => 'ready', 'total_seconds' => 99.0)
+      registry_lock = Workspaces::Registry.new
+      registry_lock.with_lock(workspace.id) { nil }
+
+      coordinator = described_class.new
+      allow(coordinator).to receive(:spawn_worker)
+      coordinator.start(workspace.id, force: true)
+
+      expect(Workspaces::StateStore.new(Workspaces::Config.state_file).get(workspace.id)['total_seconds']).to be_nil
+    end
+  end
+
+  describe 'step logs in the snapshot' do
+    let(:steps) do
+      [{ 'key' => 'gems', 'label' => 'Gems', 'state' => 'complete', 'duration_seconds' => 1.0 },
+       { 'key' => 'ready', 'label' => 'Ready', 'state' => 'pending', 'duration_seconds' => nil }]
+    end
+
+    before do
+      Workspaces::StateStore.new(Workspaces::Config.state_file).set(workspace.id, 'status' => 'stopped', 'steps' => steps)
+    end
+
+    it 'includes a bounded, scrubbed tail for each step that has output, and none for steps that have not run' do
+      Workspaces::Config.step_log_path(workspace.id, 'gems').write("old\n" * 200 + "token=private-step\nlast line\n")
+
+      logs = described_class.new.snapshot(workspace.id).fetch('step_logs')
+
+      expect(logs.keys).to eq(['gems'])
+      expect(logs['gems']['text']).to include('token=[FILTERED]', 'last line')
+      expect(logs['gems']['text']).not_to include('private-step')
+      expect(logs['gems']['text'].lines.length).to be <= Workspaces::Config::STEP_LOG_LINES
+      expect(logs['gems']['truncated']).to eq(true)
+    end
+
+    it 'reports truncated false for a short step log' do
+      Workspaces::Config.step_log_path(workspace.id, 'gems').write("short\n")
+
+      expect(described_class.new.snapshot(workspace.id).dig('step_logs', 'gems'))
+        .to eq('text' => "short\n", 'truncated' => false)
+    end
+
+    it 'leaves step logs out of the backend view and out of status calls that skip logs' do
+      Workspaces::Config.step_log_path(workspace.id, 'gems').write("x\n")
+      coordinator = described_class.new
+
+      expect(coordinator.snapshot(workspace.id, log: 'backend')['step_logs']).to eq({})
+      expect(coordinator.snapshot(workspace.id, include_log: false)['step_logs']).to eq({})
+    end
+
+    it 'advertises the web server log only once the backend has written something' do
+      coordinator = described_class.new
+      expect(coordinator.snapshot(workspace.id)['backend_log_available']).to eq(false)
+
+      Workspaces::Config.backend_log_path(workspace.id).write('')
+      expect(coordinator.snapshot(workspace.id)['backend_log_available']).to eq(false)
+
+      Workspaces::Config.backend_log_path(workspace.id).write("listening\n")
+      expect(coordinator.snapshot(workspace.id)['backend_log_available']).to eq(true)
+    end
+
+    it 'ignores a step key that is not a safe slug instead of reading outside the log directory' do
+      Workspaces::StateStore.new(Workspaces::Config.state_file)
+                            .set(workspace.id, 'status' => 'stopped', 'steps' => [{ 'key' => '../x', 'label' => 'x', 'state' => 'complete' }])
+
+      expect(described_class.new.snapshot(workspace.id)['step_logs']).to eq({})
+    end
+  end
+
   it 'serializes preparation and commands against the same per-workspace lock' do
     registry = Workspaces::Registry.new
     registry.with_lock(workspace.id) do

@@ -5,6 +5,7 @@ require_relative 'workflow'
 require_relative 'tee_log'
 require_relative 'presentation'
 require_relative 'environment_overrides'
+require_relative 'duration_format'
 
 module Workspaces
   class Coordinator
@@ -98,7 +99,9 @@ module Workspaces
         'source_update_message' => entry['source_update_message'],
         'completed_at' => entry['completed_at'], 'last_error' => entry['last_error'],
         'operation' => entry['operation'], 'failed_phase' => failure_phase(entry, status),
-        'steps' => entry.fetch('steps', []),
+        'steps' => entry.fetch('steps', []), 'total_seconds' => entry['total_seconds'],
+        'step_logs' => include_log && log == 'setup' ? step_logs(id, entry.fetch('steps', [])) : {},
+        'backend_log_available' => backend_log_available?(id),
         'log_tail' => include_log ? log_tail(id, log) : '', 'log_source' => log, 'port' => entry['port'],
         'environment_keys' => environment_keys(id),
         'editable_environment' => editable_environment(id),
@@ -151,7 +154,8 @@ module Workspaces
       update(id, 'status' => 'preparing', 'message' => restart ? 'Restarting application' : 'Preparing workspace',
                  'steps' => steps,
                  'operation' => restart ? 'restart' : 'prepare', 'failed_phase' => nil,
-                 'prepare_started_at' => now, 'completed_at' => nil, 'last_error' => nil)
+                 'prepare_started_at' => now, 'completed_at' => nil, 'last_error' => nil,
+                 'total_seconds' => nil)
     end
 
     def spawn_worker(workspace, restart, lock)
@@ -168,28 +172,41 @@ module Workspaces
 
     def run(workspace, restart:)
       id = workspace.id
+      started = monotonic
       File.open(Config.setup_log_path(id), 'a') do |file|
         file.sync = true
         log = TeeLog.new(id, file)
         log.puts "==> #{restart ? 'restarting' : 'preparing'} workspace #{id}; branch and working files unchanged"
-        prepare_and_boot(workspace, log, restart)
+        prepare_and_boot(workspace, log, restart, started)
       end
     rescue StandardError => e
-      publish_error(id, e)
+      publish_error(id, e, started)
     end
 
-    def prepare_and_boot(workspace, log, restart)
+    # The wall-clock time of the whole run, boot and readiness included. Step durations add up to
+    # less than this because orchestration between steps is not inside any step.
+    def prepare_and_boot(workspace, log, restart, started)
       id = workspace.id
       port = Workflow.new(workspace, log, state: @state).run!(restart: restart)
-      update(id, 'status' => 'ready', 'message' => 'Workspace ready', 'completed_at' => now, 'port' => port)
+      update(id, 'status' => 'ready', 'message' => 'Workspace ready', 'completed_at' => now, 'port' => port,
+                 'total_seconds' => elapsed_since(started))
     end
 
-    def publish_error(id, exception)
+    def publish_error(id, exception, started = nil)
       detail = scrub("#{exception.class}: #{exception.message}", id: id)
       $stdout.puts "[Workspace #{id}] ERROR: #{detail}"
       File.open(Config.setup_log_path(id), 'a') { |file| file.puts "ERROR: #{detail}" }
       update(id, 'status' => 'error', 'message' => 'Workspace preparation failed', 'last_error' => detail,
-                 'failed_phase' => @state.get(id)&.fetch('status', nil), 'completed_at' => now)
+                 'failed_phase' => @state.get(id)&.fetch('status', nil), 'completed_at' => now,
+                 'total_seconds' => started && elapsed_since(started))
+    end
+
+    def monotonic
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def elapsed_since(started)
+      (monotonic - started).round(3)
     end
 
     def locked?(id)
@@ -208,6 +225,35 @@ module Workspaces
         file.read
       end
       scrub(raw, id: id).lines.last(Config::SAFE_LOG_LINES).join
+    end
+
+    # Output for each recipe step, keyed by step id. Only steps that have written something
+    # appear, so a pending step has no entry and the page can show it as not started.
+    def step_logs(id, steps)
+      steps.each_with_object({}) do |step, logs|
+        path = Config.step_log_path(id, step['key'], create: false)
+        next unless path.file?
+
+        logs[step['key']] = tail_file(path, id, bytes: Config::STEP_LOG_BYTES, lines: Config::STEP_LOG_LINES)
+      end
+    rescue ArgumentError
+      {}
+    end
+
+    def backend_log_available?(id)
+      path = Config.backend_log_path(id, create: false)
+      path.file? && !path.zero?
+    end
+
+    # The tail of a log file, scrubbed, with whether earlier output was cut off.
+    def tail_file(path, id, bytes:, lines:)
+      size = path.size
+      raw = File.open(path, 'rb') do |file|
+        file.seek(-bytes, IO::SEEK_END) if size > bytes
+        file.read
+      end
+      kept = scrub(raw, id: id).lines
+      { 'text' => kept.last(lines).join, 'truncated' => size > bytes || kept.length > lines }
     end
 
     def scrub(value, id:)

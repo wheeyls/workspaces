@@ -26,10 +26,16 @@ module Workspaces
       $stdout.print(prefixed(scrubbed))
     end
 
+    # The filtering applied to everything written. Public so StepLog can copy exactly what the
+    # combined log received, instead of reimplementing the rules.
+    def scrub_text(message)
+      @overrides.scrub(message)
+    end
+
     private
 
     def scrub(message)
-      @overrides.scrub(message)
+      scrub_text(message)
     end
 
     def prefixed(message)
