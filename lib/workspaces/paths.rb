@@ -27,6 +27,11 @@ module Workspaces
       home.join('state.json')
     end
 
+    # Every finished run, one JSON object per line, shared by all workspaces of this project.
+    def build_history_path
+      home.join('build-history.jsonl')
+    end
+
     def log_path(workspace_id, create: true)
       setup_log_path(workspace_id, create: create)
     end

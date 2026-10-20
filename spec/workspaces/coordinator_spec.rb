@@ -310,6 +310,79 @@ RSpec.describe Workspaces::Coordinator do
     end
   end
 
+  describe 'build history and progress estimates' do
+    def run_recipe(steps)
+      path = Workspaces::Config.repo_root.join('.workspaces.yml')
+      recipe = YAML.safe_load(path.read)
+      recipe['steps'] = steps
+      path.write(YAML.dump(recipe))
+      coordinator = described_class.new
+      coordinator.start(workspace.id)
+      coordinator.wait(workspace.id)
+    end
+
+    let(:passing) do
+      [{ 'id' => 'setup', 'name' => 'Setup', 'run' => ['ruby', '-e', 'sleep 0.1'] },
+       { 'id' => 'app', 'name' => 'App', 'run' => ['ruby', '-e', 'sleep 30'], 'background' => true },
+       { 'id' => 'ready', 'name' => 'Ready', 'run' => ['ruby', '-e', 'puts 1'] }]
+    end
+
+    after { Workspaces::Backend.new(workspace.id).stop! }
+
+    it 'records every successful run, with the time of each step' do
+      run_recipe(passing)
+
+      line = JSON.parse(Workspaces::Config.build_history_path.read.lines.last)
+      expect(line).to include('workspace_id' => workspace.id, 'result' => 'complete', 'operation' => 'prepare')
+      expect(line['steps'].map { |s| s['id'] }).to eq(%w(setup app ready))
+      expect(line['steps']).to all(include('state' => 'complete', 'seconds' => be_a(Numeric)))
+      expect(line['total_seconds']).to be >= 0.1
+    end
+
+    it 'records a failed run too, but keeps it out of the averages' do
+      run_recipe([{ 'id' => 'setup', 'name' => 'Setup', 'run' => ['ruby', '-e', 'exit 3'] }] + passing.drop(1))
+
+      line = JSON.parse(Workspaces::Config.build_history_path.read.lines.last)
+      expect(line).to include('result' => 'failed')
+      expect(line['steps'].first).to include('id' => 'setup', 'state' => 'failed')
+      expect(Workspaces::BuildHistory.estimates(%w(setup))).to eq({})
+    end
+
+    it 'learns from each successful build, and the next run is given those averages up front' do
+      run_recipe(passing)
+      expect(Workspaces::BuildHistory.estimates(%w(setup app ready)).keys).to match_array(%w(setup app ready))
+
+      allow_any_instance_of(described_class).to receive(:spawn_worker)
+      later = described_class.new
+      later.start(workspace.id, force: true)
+
+      stored = Workspaces::StateStore.new(Workspaces::Config.state_file).get(workspace.id)
+      expect(stored['estimates'].keys).to match_array(%w(setup app ready))
+      expect(later.snapshot(workspace.id)['estimates']).to eq(stored['estimates'])
+    end
+
+    it 'carries progress in the snapshot only while a build is being prepared' do
+      allow_any_instance_of(described_class).to receive(:spawn_worker)
+      coordinator = described_class.new
+      coordinator.start(workspace.id)
+
+      progress = coordinator.snapshot(workspace.id).dig('presentation', 'progress')
+      expect(progress).to include('percent' => 0, 'step_text' => 'Step 1 of 3')
+
+      Workspaces::StateStore.new(Workspaces::Config.state_file).set(workspace.id, 'status' => 'ready')
+      expect(coordinator.snapshot(workspace.id).dig('presentation', 'progress')).to be_nil
+    end
+
+    it 'does not break a build when the history cannot be written' do
+      Workspaces::Config.build_history_path.dirname.mkpath
+      Workspaces::Config.build_history_path.mkdir
+
+      snapshot = nil
+      expect { snapshot = run_recipe(passing) }.to output(/build history not recorded/).to_stderr
+      expect(snapshot['status']).to eq('ready')
+    end
+  end
+
   describe 'step logs in the snapshot' do
     let(:steps) do
       [{ 'key' => 'gems', 'label' => 'Gems', 'state' => 'complete', 'duration_seconds' => 1.0 },

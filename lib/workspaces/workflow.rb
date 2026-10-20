@@ -86,8 +86,9 @@ module Workspaces
     def progress(step, status, duration_seconds: nil)
       @state.transaction do |data|
         entry = data.fetch(@workspace.id)
-        entry['steps'].find { |item| item['key'] == step['id'] }
-          .merge!('state' => status, 'duration_seconds' => duration_seconds)
+        record = entry['steps'].find { |item| item['key'] == step['id'] }
+        record.merge!('state' => status, 'duration_seconds' => duration_seconds)
+        record['started_at'] = Time.now.utc.iso8601(3) if status == 'active'
         entry['message'] = step['name']
         entry['current_step'] = step['id']
         entry['updated_at'] = Time.now.utc.iso8601

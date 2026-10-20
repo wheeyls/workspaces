@@ -219,6 +219,20 @@ RSpec.describe Workspaces::Workflow do
     Workspaces::Backend.new(id).stop! if id
   end
 
+  it 'stamps each step with when it started, so progress can be measured against its usual time' do
+    install_recipe
+    workspace = Workspaces::Registry.new.create(branch: 'main')
+    coordinator = Workspaces::Coordinator.new
+    coordinator.start(workspace.id)
+    snapshot = coordinator.wait(workspace.id)
+
+    stamps = snapshot['steps'].map { |step| Time.parse(step['started_at']) }
+    expect(stamps).to eq(stamps.sort)
+    expect(stamps.length).to eq(3)
+  ensure
+    Workspaces::Backend.new(workspace.id).stop! if workspace
+  end
+
   it 'cleans up the server and reports the failed readiness step' do
     install_recipe
     recipe = YAML.safe_load(root.join('.workspaces.yml').read)
