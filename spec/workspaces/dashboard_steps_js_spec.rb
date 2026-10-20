@@ -71,7 +71,7 @@ RSpec.describe 'dashboard step accordions' do
       const fullPre = new Node('pre'); fullLog.append(fullSummary, fullPre);
       document.reg(fullOutcome);
       steps.append(fullLog);
-      const names = ['status', 'summary', 'subtitle', 'subtitle-text', 'activity', 'elapsed', 'preview', 'lead-action', 'message',
+      const names = ['status', 'summary', 'activity', 'elapsed', 'preview', 'lead-action', 'message',
         'error', 'error-panel', 'connection', 'environment-title', 'environment-disclosure', 'technical-disclosure',
         'actions', 'source-update-message', 'updated'];
       names.forEach((n) => root.append(mk('div', n, { hidden: n === 'preview' })));

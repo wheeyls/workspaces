@@ -7,7 +7,13 @@
     <div class="lead__text">
       <h2 id="status" role="status"><%= escape(@presentation['headline']) %></h2>
       <p id="summary" class="lead__summary"><%= escape(@presentation['summary']) %></p>
-      <p id="subtitle" class="muted" <%= 'hidden' unless @presentation['subtitle'] %>><span id="subtitle-text"><%= escape(@presentation['subtitle']) %></span><span id="activity" <%= 'hidden' unless @presentation['busy'] %>> · <span class="activity-dot" aria-hidden="true"></span> <span id="elapsed">—</span></span></p>
+    </div>
+    <div class="build-progress" id="build-progress" <%= 'hidden' unless @presentation['progress'] %>>
+      <div class="progress-bar" id="progress-bar" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= progress_percent %>" aria-valuetext="<%= escape(progress_valuetext) %>" data-slow="<%= @presentation.dig('progress', 'slow') ? 'true' : 'false' %>"><span class="progress-bar__fill" id="progress-fill" style="inline-size: <%= progress_percent %>%"></span></div>
+      <div class="progress-meta">
+        <p class="progress-meta__step"><span class="activity-dot" aria-hidden="true"></span><span id="progress-step"><%= escape(progress_step_text) %></span></p>
+        <p class="progress-meta__time muted"><span id="progress-percent"><%= progress_percent %>%</span><span aria-hidden="true"> · </span><span id="elapsed"><%= escape(progress_elapsed_text) %></span><span id="progress-eta"><%= escape(progress_eta_suffix) %></span></p>
+      </div>
     </div>
     <div class="lead__actions">
       <a id="preview" class="button button--primary button--large" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>

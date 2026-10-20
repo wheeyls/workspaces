@@ -186,6 +186,35 @@ module Workspaces
       text ? "#{total['state']} · #{text}" : 'everything, in order'
     end
 
+    # The bar's text, rendered on the server for the first paint; app.js keeps it current after that.
+    def progress
+      @presentation['progress'] || {}
+    end
+
+    def progress_percent
+      progress.fetch('percent', 0)
+    end
+
+    def progress_step_text
+      return '' if progress.empty?
+
+      "#{progress['step_text']} · #{progress['step_label']}"
+    end
+
+    def progress_elapsed_text
+      DurationFormat.call(progress['elapsed_seconds']) || '—'
+    end
+
+    def progress_eta_suffix
+      progress['eta_text'] ? " · #{progress['eta_text']}" : ''
+    end
+
+    def progress_valuetext
+      return '' if progress.empty?
+
+      [progress_step_text, progress['eta_text']].compact.join('. ')
+    end
+
     def preset_badge_text
       name = @presentation['current_preset']
       name ? "Preset: #{name}" : ''

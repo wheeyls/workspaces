@@ -6,6 +6,7 @@ require_relative 'tee_log'
 require_relative 'presentation'
 require_relative 'environment_overrides'
 require_relative 'duration_format'
+require_relative 'build_history'
 
 module Workspaces
   class Coordinator
@@ -100,6 +101,7 @@ module Workspaces
         'completed_at' => entry['completed_at'], 'last_error' => entry['last_error'],
         'operation' => entry['operation'], 'failed_phase' => failure_phase(entry, status),
         'steps' => entry.fetch('steps', []), 'total_seconds' => entry['total_seconds'],
+        'estimates' => entry.fetch('estimates', {}),
         'step_logs' => include_log && log == 'setup' ? step_logs(id, entry.fetch('steps', [])) : {},
         'backend_log_available' => backend_log_available?(id),
         'log_tail' => include_log ? log_tail(id, log) : '', 'log_source' => log, 'port' => entry['port'],
@@ -151,8 +153,10 @@ module Workspaces
       steps = recipe.for_operation(restart: restart).map do |step|
         { 'key' => step['id'], 'label' => step['name'], 'state' => 'pending', 'duration_seconds' => nil }
       end
+      # Frozen for the whole run, so the bar does not shift under the reader and the history file
+      # is read once per run rather than once per poll.
       update(id, 'status' => 'preparing', 'message' => restart ? 'Restarting application' : 'Preparing workspace',
-                 'steps' => steps,
+                 'steps' => steps, 'estimates' => BuildHistory.estimates(steps.map { |step| step['key'] }),
                  'operation' => restart ? 'restart' : 'prepare', 'failed_phase' => nil,
                  'prepare_started_at' => now, 'completed_at' => nil, 'last_error' => nil,
                  'total_seconds' => nil)
@@ -188,17 +192,30 @@ module Workspaces
     def prepare_and_boot(workspace, log, restart, started)
       id = workspace.id
       port = Workflow.new(workspace, log, state: @state).run!(restart: restart)
+      total = elapsed_since(started)
       update(id, 'status' => 'ready', 'message' => 'Workspace ready', 'completed_at' => now, 'port' => port,
-                 'total_seconds' => elapsed_since(started))
+                 'total_seconds' => total)
+      record_run(id, 'complete', total)
     end
 
     def publish_error(id, exception, started = nil)
       detail = scrub("#{exception.class}: #{exception.message}", id: id)
       $stdout.puts "[Workspace #{id}] ERROR: #{detail}"
       File.open(Config.setup_log_path(id), 'a') { |file| file.puts "ERROR: #{detail}" }
+      total = started && elapsed_since(started)
       update(id, 'status' => 'error', 'message' => 'Workspace preparation failed', 'last_error' => detail,
                  'failed_phase' => @state.get(id)&.fetch('status', nil), 'completed_at' => now,
-                 'total_seconds' => started && elapsed_since(started))
+                 'total_seconds' => total)
+      record_run(id, 'failed', total)
+    end
+
+    # Appends to the build history. A problem here must never change how the run itself ended.
+    def record_run(id, result, total_seconds)
+      entry = @state.get(id) || {}
+      BuildHistory.record(workspace_id: id, operation: entry['operation'], result: result,
+                          total_seconds: total_seconds, steps: entry['steps'])
+    rescue StandardError
+      nil
     end
 
     def monotonic

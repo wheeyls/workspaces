@@ -54,6 +54,30 @@ Interrupted steps have no recorded duration. Step timings are not the total
 workflow wall-clock time; orchestration overhead can fall outside the steps, which is
 why the total is measured separately and is usually a little larger than their sum.
 
+### Build history and the progress bar
+
+While a workspace is being prepared the dashboard shows a progress bar with the current step,
+the percentage, the elapsed time and, once there is history, an estimate of what is left.
+
+Every finished run is appended to `build-history.jsonl` in the Workspaces home, one JSON
+object per line, shared by all workspaces of the project. It is written quietly and a failure
+to write it never affects the build. Each record has the time, workspace, operation
+(`prepare` or `restart`), result (`complete` or `failed`), `total_seconds`, the Workspaces
+version, and each step's id, state and seconds. To see which step is getting slower:
+
+```sh
+jq -r 'select(.result=="complete") | .at[:10] as $d | .steps[] | [$d, .id, .seconds] | @tsv' \
+  "$WORKSPACES_HOME/build-history.jsonl"
+```
+
+Estimates are the mean of each step over its last 10 successful runs. Failed runs are
+recorded for the trend but never count toward "usual". They are read once when a run starts,
+so the bar does not shift while you watch it. Percentages weigh each step by how long it
+usually takes, count the running step by how much of its usual time has passed, never reach
+100% until the run finishes, and hold a step that overruns below done. A step more than 1.5
+times its usual time is flagged as taking longer than usual. With no history yet, steps weigh
+the same and no time estimate is shown. Delete the file to start the estimates over.
+
 ## Serve the dashboard and previews
 
 Run `serve` in a separate terminal using the **same project root and `WORKSPACES_HOME`**

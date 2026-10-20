@@ -277,6 +277,69 @@ RSpec.describe Workspaces::DashboardView do
     expect(html.index('Install Ruby dependencies')).to be > html.index('id="technical-disclosure"')
   end
 
+  describe 'build progress bar' do
+    let(:started) { (Time.now.utc - 90).iso8601 }
+    let(:steps) do
+      [{ 'key' => 'gems', 'label' => 'Install gems', 'state' => 'complete', 'duration_seconds' => 30.0 },
+       { 'key' => 'assets', 'label' => 'Build <assets>', 'state' => 'active', 'started_at' => (Time.now.utc - 20).iso8601 },
+       { 'key' => 'ready', 'label' => 'Wait for readiness', 'state' => 'pending' }]
+    end
+
+    def render_busy(extra = {})
+      described_class.render(snapshot.merge('status' => 'preparing', 'active' => true, 'steps' => steps,
+                                            'prepare_started_at' => started, 'estimates' => { 'gems' => 30.0, 'assets' => 100.0, 'ready' => 20.0 })
+                                      .merge(extra))
+    end
+
+    it 'leads a build with the headline and a progressbar that carries its value and a readable summary' do
+      html = render_busy
+
+      expect(html).to include('Setting things up…')
+      expect(html).to match(/id="build-progress"(?![^>]*\shidden)/)
+      expect(html).to match(/role="progressbar"[^>]*aria-valuemin="0"[^>]*aria-valuemax="100"[^>]*aria-valuenow="(\d+)"/)
+      expect(html).to include('Step 2 of 3 · Build &lt;assets&gt;')
+      expect(html).to match(/aria-valuetext="Step 2 of 3 · Build &lt;assets&gt;\. About [^"]*left"/)
+      expect(html).not_to include('This usually takes a few minutes')
+    end
+
+    it 'sizes the fill to the percentage and shows it as text beside the elapsed time' do
+      html = render_busy
+      percent = html[/aria-valuenow="(\d+)"/, 1]
+
+      expect(html).to include(%(style="inline-size: #{percent}%"), %(id="progress-percent">#{percent}%</span>))
+      expect(html).to match(/id="elapsed">1m 3?\ds</).or match(/id="elapsed">1m \d+s</)
+    end
+
+    it 'says nothing about time without history, only which step it is on' do
+      html = render_busy('estimates' => {})
+
+      expect(html).to include('Step 2 of 3')
+      expect(html).to include('id="progress-eta"></span>')
+      expect(html).not_to include('left<')
+    end
+
+    it 'marks a slow step so it can be styled, and says it is taking longer than usual' do
+      slow = steps.map { |s| s['key'] == 'assets' ? s.merge('started_at' => (Time.now.utc - 400).iso8601) : s }
+      html = described_class.render(snapshot.merge('status' => 'preparing', 'active' => true, 'steps' => slow,
+                                                   'prepare_started_at' => started, 'estimates' => { 'assets' => 100.0 }))
+
+      expect(html).to include('data-slow="true"', 'Taking longer than usual')
+    end
+
+    it 'is in the page but hidden when no build is running, so a poll can reveal it' do
+      html = described_class.render(snapshot.merge('status' => 'ready'))
+
+      expect(html).to match(/id="build-progress"[^>]*\shidden/)
+      expect(html).not_to include('role="progressbar"[^>]*aria-valuenow="[1-9]')
+    end
+
+    it 'no longer renders the old summary and subtitle lines for a build' do
+      html = render_busy
+
+      expect(html).not_to include('id="subtitle"', 'subtitle-text')
+    end
+  end
+
   describe 'current preset badge' do
     let(:presets) { { 'www' => { 'UE_APP' => 'www' }, '<Admin>' => { 'UE_APP' => 'admin' } } }
 
