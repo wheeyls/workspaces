@@ -33,12 +33,13 @@ RSpec.describe Workspaces::Presentation do
     expect(view['open']).to eq('environment' => false, 'technical' => true)
   end
 
-  it 'names the current step quietly under the headline while busy, and nowhere else' do
-    busy = present('status' => 'preparing', 'active' => true, 'message' => 'Install Ruby dependencies')
+  it 'has a friendly headline while busy, with the detail carried by the progress bar instead' do
+    busy = present('status' => 'preparing', 'active' => true,
+                   'steps' => [{ 'key' => 'gems', 'label' => 'Install Ruby dependencies', 'state' => 'active' }])
 
     expect(busy['headline']).to eq('Setting things up…')
-    expect(busy['subtitle']).to eq('Install Ruby dependencies')
-    expect(present('status' => 'ready', 'message' => 'Workspace ready')['subtitle']).to be_nil
+    expect(busy['progress']['step_label']).to eq('Install Ruby dependencies')
+    expect(present('status' => 'ready', 'steps' => [{ 'key' => 'gems', 'label' => 'G', 'state' => 'complete' }])['progress']).to be_nil
   end
 
   it 'treats an active command on an otherwise ready workspace as busy' do

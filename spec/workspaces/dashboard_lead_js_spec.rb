@@ -20,6 +20,8 @@ RSpec.describe 'dashboard lead rendering' do
           this.firstChild = opts.text ? { nodeType: 3, textContent: opts.text } : null;
         }
         append(...c) { c.flat().forEach((x) => { x.parentNode = this; this.children.push(x); }); }
+        setAttribute(n, v) { this.attributes[n] = v; }
+        removeAttribute(n) { delete this.attributes[n]; }
         replaceChildren(...c) { this.children = []; this.append(...c); }
         addEventListener(t, h) { (this.listeners[t] ||= []).push(h); }
         querySelectorAll(sel) {
@@ -52,8 +54,10 @@ RSpec.describe 'dashboard lead rendering' do
         id: 'ws-1', busy: 'false', disclosureState: input.initial } }));
       const mk = (tag, id, o = {}) => document.reg(new Node(tag, { id, ...o }));
       const status = mk('h2', 'status'), summary = mk('p', 'summary');
-      const subtitle = mk('p', 'subtitle', { hidden: true });
-      const subtitleText = mk('span', 'subtitle-text');
+      const buildProgress = mk('div', 'build-progress', { hidden: true });
+      const bar = mk('div', 'progress-bar'); const fill = mk('span', 'progress-fill');
+      fill.style = {};
+      const barStep = mk('span', 'progress-step'), barPercent = mk('span', 'progress-percent'), barEta = mk('span', 'progress-eta');
       const activity = mk('span', 'activity', { hidden: true }), elapsed = mk('span', 'elapsed');
       const preview = mk('a', 'preview', { hidden: true });
       const leadAction = mk('div', 'lead-action', { className: 'lead__action' });
@@ -69,7 +73,7 @@ RSpec.describe 'dashboard lead rendering' do
       const srcMsg = mk('p', 'source-update-message');
       const log = mk('pre', 'log'); log.clientHeight = 1; log.scrollHeight = 1; log.scrollTop = 0;
       const updated = mk('time', 'updated');
-      root.append(status, summary, subtitle, subtitleText, activity, elapsed, preview, leadAction, message, error, errorPanel,
+      root.append(status, summary, buildProgress, bar, fill, barStep, barPercent, barEta, activity, elapsed, preview, leadAction, message, error, errorPanel,
         connection, envTitle, presetBadge, envDisclosure, techDisclosure, progress, actions, srcMsg, log, updated);
 
       const timers = []; const responses = input.polls.slice();
@@ -92,7 +96,9 @@ RSpec.describe 'dashboard lead rendering' do
           const poll = timers.splice(at, 1)[0]; await poll.cb(); await new Promise((r) => setImmediate(r));
           snaps.push({
             headline: status.textContent, summary: summary.textContent,
-            subtitleHidden: subtitle.hidden, subtitleText: subtitleText.textContent,
+            barHidden: buildProgress.hidden, barNow: bar.attributes['aria-valuenow'], barFill: fill.style.inlineSize,
+            barStep: barStep.textContent, barPercent: barPercent.textContent, barEta: barEta.textContent,
+            barSlow: bar.dataset.slow, barText: bar.attributes['aria-valuetext'],
             previewHidden: preview.hidden,
             leadAction: leadAction.children[0] ? { action: leadAction.children[0].action,
               label: leadAction.children[0].children[0].textContent,
@@ -111,11 +117,11 @@ RSpec.describe 'dashboard lead rendering' do
     JSON.parse(out)
   end
 
-  def poll(state, **extra)
+  def poll(state, extra = {})
     presentation = { 'state' => state, 'busy' => state == 'busy', 'ready' => state == 'ready', 'error' => '',
                      'steps' => [], 'actions' => [], 'sections' => {},
                      'headline' => "headline for #{state}", 'summary' => "summary for #{state}",
-                     'subtitle' => nil, 'lead_action' => nil, 'environment_title' => 'Change settings',
+                     'progress' => nil, 'lead_action' => nil, 'environment_title' => 'Change settings',
                      'environment_submit' => 'Save & restart',
                      'open' => { 'environment' => false, 'technical' => false } }.merge(extra)
     { 'presentation' => presentation, 'message' => 'm', 'source_update_message' => '', 'editable_environment' => {},
@@ -124,17 +130,32 @@ RSpec.describe 'dashboard lead rendering' do
   end
 
   it 'moves from setting up to ready without a reload: new headline, Open button, details stay collapsed' do
-    busy = poll('busy', 'subtitle' => 'Install Ruby dependencies', 'open' => { 'environment' => false, 'technical' => true })
+    busy = poll('busy', 'open' => { 'environment' => false, 'technical' => true })
     ready = poll('ready', 'lead_action' => { 'kind' => 'open', 'label' => 'Open workspace' },
                           'open' => { 'environment' => false, 'technical' => false })
 
     first, second = run_scenarios(initial_state: 'idle', polls: [busy, ready])
 
-    expect(first).to include('headline' => 'headline for busy', 'subtitleHidden' => false,
-                             'subtitleText' => 'Install Ruby dependencies', 'previewHidden' => true,
+    expect(first).to include('headline' => 'headline for busy', 'previewHidden' => true,
                              'techOpen' => true, 'envOpen' => false)
-    expect(second).to include('headline' => 'headline for ready', 'subtitleHidden' => true,
+    expect(second).to include('headline' => 'headline for ready', 'barHidden' => true,
                               'previewHidden' => false, 'techOpen' => false, 'leadAction' => nil)
+  end
+
+  it 'draws the progress bar the server computed, marks a slow step, and hides the bar when the run ends' do
+    working = poll('busy', 'progress' => { 'percent' => 42, 'step_label' => 'Install gems', 'step_text' => 'Step 2 of 5',
+                                           'eta_text' => 'About 1m 10s left', 'slow' => false, 'elapsed_seconds' => 80 })
+    slow = poll('busy', 'progress' => { 'percent' => 61, 'step_label' => 'Build assets', 'step_text' => 'Step 4 of 5',
+                                        'eta_text' => 'Taking longer than usual', 'slow' => true, 'elapsed_seconds' => 400 })
+    done = poll('ready')
+
+    a, b, c = run_scenarios(initial_state: 'busy', polls: [working, slow, done])
+
+    expect(a).to include('barHidden' => false, 'barNow' => '42', 'barFill' => '42%', 'barPercent' => '42%',
+                         'barStep' => 'Step 2 of 5 · Install gems', 'barEta' => ' · About 1m 10s left', 'barSlow' => 'false',
+                         'barText' => 'Step 2 of 5 · Install gems. About 1m 10s left')
+    expect(b).to include('barNow' => '61', 'barSlow' => 'true', 'barEta' => ' · Taking longer than usual')
+    expect(c).to include('barHidden' => true)
   end
 
   it 'shows a large retry button and opens technical details when setup fails' do

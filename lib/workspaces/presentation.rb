@@ -1,3 +1,5 @@
+require_relative 'progress'
+
 module Workspaces
   class Presentation
     TITLES = { 'idle' => 'Ready to start', 'stopped' => 'Server stopped', 'ready' => 'Workspace ready',
@@ -41,7 +43,7 @@ module Workspaces
       'busy' => {
         sections: %w(lead technical log),
         headline: 'Setting things up…',
-        summary: "This usually takes a few minutes. We'll take you to the preview when it's ready.",
+        summary: "We'll take you to the preview as soon as it's ready.",
         environment_submit: 'Save & restart', environment_title: 'Change settings',
         open_environment: false, open_technical: true
       },
@@ -91,7 +93,7 @@ module Workspaces
         'actions' => actions, 'ready' => status == 'ready' && !busy?,
         'state' => state, 'sections' => sections,
         'headline' => definition[:headline], 'summary' => definition[:summary],
-        'subtitle' => subtitle, 'lead_action' => lead_action, 'total' => total,
+        'lead_action' => lead_action, 'total' => total, 'progress' => progress,
         'current_preset' => current_preset,
         'environment_title' => definition[:environment_title],
         'environment_submit' => definition[:environment_submit],
@@ -159,11 +161,12 @@ module Workspaces
       { 'state' => failed ? 'failed' : 'complete', 'seconds' => seconds }
     end
 
-    # What is happening right now, in the quiet line under the headline.
-    def subtitle
-      return nil unless state == 'busy'
+    # The progress bar's numbers, only while a build is being prepared (not for a lone command
+    # on a ready workspace, which has no steps of its own to measure).
+    def progress
+      return nil unless status == 'preparing' && !steps.empty?
 
-      @snapshot['message']
+      Progress.new(steps: steps, estimates: @snapshot['estimates'], started_at: @snapshot['prepare_started_at']).to_h
     end
 
     def title
