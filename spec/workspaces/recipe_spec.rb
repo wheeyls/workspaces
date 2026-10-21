@@ -22,6 +22,79 @@ RSpec.describe Workspaces::Recipe do
     expect(recipe.command(recipe.steps.first, {})).to eq(['sh', '-c', 'echo setup'])
   end
 
+  describe 'lfs.fetch' do
+    it 'does nothing when omitted, so existing recipes are unchanged' do
+      configure(steps)
+      recipe = described_class.new
+
+      expect(recipe.lfs_fetch).to eq([])
+      expect(recipe.steps.map { |step| step['id'] }).to eq(%w(setup app ready))
+    end
+
+    it 'adds a visible first step that pulls only the named paths, on prepare but not on restart' do
+      configure(steps, 'lfs' => { 'fetch' => ['eval/amc/images/golden/**', 'spec/fixtures/**'] })
+      recipe = described_class.new
+
+      first = recipe.steps.first
+      expect(first).to include('id' => 'lfs', 'name' => 'Fetch Git LFS files', 'background' => false)
+      expect(first['run']).to eq(['git', 'lfs', 'pull', '--include=eval/amc/images/golden/**,spec/fixtures/**'])
+      expect(recipe.for_operation.map { |step| step['id'] }).to eq(%w(lfs setup app ready))
+      expect(recipe.for_operation(restart: true).map { |step| step['id'] }).to eq(%w(app ready))
+    end
+
+    it 'runs the step as a plain argument array, never through a shell' do
+      configure(steps, 'lfs' => { 'fetch' => ['a b/**', 'x;y'] })
+
+      expect(described_class.new.steps.first['run']).to be_an(Array)
+    end
+
+    it 'removes duplicate paths' do
+      configure(steps, 'lfs' => { 'fetch' => ['a/**', 'a/**'] })
+
+      expect(described_class.new.lfs_fetch).to eq(['a/**'])
+    end
+
+    it 'accepts an empty fetch list as no step' do
+      configure(steps, 'lfs' => { 'fetch' => [] })
+
+      expect(described_class.new.steps.length).to eq(3)
+    end
+
+    [
+      [['/etc/passwd'], /relative to the repository/],
+      [['../outside'], /relative to the repository/],
+      [['a/../../b'], /relative to the repository/],
+      [['--exclude=x'], /relative to the repository/],
+      [['a,b'], /commas or control/],
+      [["a\nb"], /commas or control/],
+      [[''], /nonempty trimmed/],
+      [[' a '], /nonempty trimmed/],
+      [[nil], /nonempty trimmed/],
+      [[1], /nonempty trimmed/]
+    ].each do |paths, message|
+      it "rejects #{paths.inspect}" do
+        configure(steps, 'lfs' => { 'fetch' => paths })
+
+        expect { described_class.new }.to raise_error(described_class::Invalid, message)
+      end
+    end
+
+    it 'rejects a non-array fetch, a non-mapping lfs and unknown keys' do
+      [{ 'fetch' => 'a' }, 'a', ['a'], { 'fetch' => ['a'], 'prune' => true }].each do |value|
+        configure(steps, 'lfs' => value)
+
+        expect { described_class.new }.to raise_error(described_class::Invalid)
+      end
+    end
+
+    it 'does not let an existing step id collide with the added one' do
+      configure([{ 'id' => 'lfs', 'name' => 'Mine', 'run' => 'true' }] + steps.drop(1),
+                'lfs' => { 'fetch' => ['a/**'] })
+
+      expect { described_class.new }.to raise_error(described_class::Invalid, /unique/)
+    end
+  end
+
   it 'expands explicit context without using a shell for argument arrays' do
     steps.first['run'] = ['echo', '${WORKSPACE_PATH}']
     configure(steps, 'env' => { 'APP_URL' => '${WORKSPACE_URL}', 'REMOVE_ME' => nil })

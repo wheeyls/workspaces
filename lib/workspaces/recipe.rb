@@ -7,7 +7,9 @@ module Workspaces
     class Invalid < ArgumentError; end
     RESERVED_ENV = %w(WORKSPACE_ID WORKSPACE_PATH WORKSPACE_REPO_ROOT WORKSPACE_PORT WORKSPACE_URL
                       WORKSPACE_HOST WORKSPACE_CACHE_DIR WORKSPACE_RUN_ID).freeze
-    attr_reader :steps, :environment, :default_editable_env, :environment_presets
+    LFS_STEP_ID = 'lfs'.freeze
+    LFS_STEP_NAME = 'Fetch Git LFS files'.freeze
+    attr_reader :steps, :environment, :default_editable_env, :environment_presets, :lfs_fetch
 
     def initialize(root: Config.repo_root)
       @root = root
@@ -16,7 +18,9 @@ module Workspaces
       @default_editable_env = validate_editable_env!(document.fetch('default_editable_env', {}))
       @environment_presets = validate_environment_presets!(document.fetch('environment_presets', {}))
       @environment = validate_env!(document.fetch('env', {}))
+      @lfs_fetch = validate_lfs!(document.fetch('lfs', {}))
       @steps = document.fetch('steps').map { |step| validate_step!(step) }
+      @steps = [lfs_step] + @steps unless lfs_fetch.empty?
       validate_editable_overlap!
       validate_sequence!
     rescue Errno::ENOENT
@@ -27,6 +31,13 @@ module Workspaces
 
     def for_operation(restart: false)
       restart ? steps.drop(steps.index { |step| step['background'] }) : steps
+    end
+
+    # Files fetched into the workspace come from the LFS objects the source repository already
+    # has, then are linked in by `git lfs pull`; the source's store is shared by every workspace.
+    def lfs_step
+      { 'id' => LFS_STEP_ID, 'name' => LFS_STEP_NAME, 'timeout' => 600, 'env' => {}, 'background' => false,
+        'run' => ['git', 'lfs', 'pull', "--include=#{lfs_fetch.join(',')}"] }
     end
 
     def command(step, context)
@@ -50,7 +61,7 @@ module Workspaces
         raise Invalid,
               'Configuration must be a mapping with version: 1'
       end
-      unknown_keys!(document, %w(version env default_editable_env environment_presets steps))
+      unknown_keys!(document, %w(version env default_editable_env environment_presets lfs steps))
       raise Invalid, 'steps must be a nonempty array' unless document['steps'].is_a?(Array) && !document['steps'].empty?
     end
 
@@ -98,6 +109,26 @@ module Workspaces
       return unless step['background'] && step.key?('timeout')
       raise Invalid,
             'timeout applies to foreground steps, not the server lifetime'
+    end
+
+    # `lfs: { fetch: [path, ...] }` names the Git LFS files a workspace needs. Everything else
+    # stays a pointer. Paths are repository-relative globs handed to `git lfs pull --include`, so
+    # they are checked for the things that would make that unsafe or surprising.
+    def validate_lfs!(value)
+      raise Invalid, 'lfs must be a mapping' unless value.is_a?(Hash)
+
+      unknown_keys!(value, %w(fetch))
+      paths = value.fetch('fetch', [])
+      raise Invalid, 'lfs.fetch must be an array of paths' unless paths.is_a?(Array)
+
+      paths.each do |path|
+        unless path.is_a?(String) && !path.strip.empty? && path == path.strip
+          raise Invalid, 'lfs.fetch paths must be nonempty trimmed strings'
+        end
+        raise Invalid, 'lfs.fetch paths cannot contain commas or control characters' if path.match?(/[,[:cntrl:]]/)
+        raise Invalid, 'lfs.fetch paths must be relative to the repository' if path.start_with?('/', '-') || path.split('/').include?('..')
+      end
+      paths.uniq
     end
 
     def validate_env!(values)
