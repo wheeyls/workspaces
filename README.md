@@ -39,6 +39,42 @@ The returned JSON includes the workspace ID, dashboard URL, and preview URL. You
 create from a pull request with `create --pr NUMBER`, or create a new branch with
 `create --new-branch NAME --from REF`. Run `help` for lifecycle and other commands.
 
+### Git LFS
+
+If the project keeps large files in [Git LFS](https://git-lfs.com), a new workspace does not
+copy them. Creating a workspace (and fast-forwarding a PR workspace to a newer head) leaves
+those files as small pointer files, and `git status` stays clean. Without this, every
+workspace would hold a full second copy of every LFS file, even though the source
+checkout's LFS store is already shared.
+
+List the paths a workspace actually needs in `.workspaces.yml`:
+
+```yaml
+lfs:
+  fetch:
+    - eval/amc/images/golden/**
+    - spec/fixtures/images/**
+```
+
+That adds a first step, **Fetch Git LFS files**, which runs
+`git lfs pull --include=<paths>` in the workspace. It appears in the step list with its own
+log, time and place in the progress estimate like any other step, and it runs on `start` and
+`prepare` but not on `restart`. Paths are repository-relative patterns; absolute paths,
+`..`, a leading `-`, commas and control characters are rejected when the recipe loads.
+Omit `lfs` and nothing changes except that files stay as pointers.
+
+A few things worth knowing:
+
+- Files are fetched from the objects the source repository already has when it can, and from
+  the remote otherwise. If neither works (no network, or no credentials for LFS) the step
+  fails and the workspace reports it, rather than silently leaving pointers.
+- A file that is still a pointer reads as a ~130 byte text file starting with
+  `version https://git-lfs`. If a test or build reads an LFS file, add its path to
+  `lfs.fetch`.
+- To fetch more by hand in an existing workspace:
+  `workspaces exec <id> -- git lfs pull --include='path/**'`.
+- Workspaces created before this behavior keep their real files; nothing is converted.
+
 ### Step timings
 
 Per-step durations are persisted in seconds in workspace step status JSON, so they
