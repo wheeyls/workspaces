@@ -73,6 +73,81 @@ RSpec.describe Workspaces::Worktree do
     expect(workspace).to have_received(:git!).with('fetch', 'origin', 'pull/43828/head').once
   end
 
+  describe 'Git LFS files' do
+    before do
+      skip 'git-lfs is not installed' unless system('git lfs version', out: File::NULL, err: File::NULL)
+
+      git('lfs', 'install', '--local')
+      git('lfs', 'track', 'big/**/*.bin')
+      FileUtils.mkdir_p(Workspaces::Config.repo_root.join('big/keep'))
+      FileUtils.mkdir_p(Workspaces::Config.repo_root.join('big/other'))
+      File.binwrite(Workspaces::Config.repo_root.join('big/keep/a.bin'), 'A' * 100_000)
+      File.binwrite(Workspaces::Config.repo_root.join('big/other/b.bin'), 'B' * 100_000)
+      git('add', '.')
+      git('-c', 'core.hooksPath=/dev/null', 'commit', '-m', 'Add LFS files')
+    end
+
+    def pointer?(path)
+      path.read(40).to_s.start_with?('version https://git-lfs')
+    end
+
+    it 'gives a new workspace small pointer files instead of copying every LFS file, and stays clean' do
+      workspace = described_class.create(branch: 'main')
+
+      expect(pointer?(workspace.path.join('big/keep/a.bin'))).to be(true)
+      expect(workspace.path.join('big/keep/a.bin').size).to be < 200
+      expect(workspace.path.join('tracked.txt').read).to eq('baseline')
+      expect(workspace.dirty?).to be(false)
+    end
+
+    it 'leaves the source checkout\'s real files untouched' do
+      described_class.create(branch: 'main')
+
+      expect(Workspaces::Config.repo_root.join('big/keep/a.bin').size).to eq(100_000)
+    end
+
+    it 'can fetch just the files a recipe names, using what the source repository already has' do
+      workspace = described_class.create(branch: 'main')
+
+      _, status = Open3.capture2e('git', 'lfs', 'pull', '--include=big/keep/**', chdir: workspace.path.to_s)
+
+      expect(status.success?).to be(true)
+      expect(workspace.path.join('big/keep/a.bin').size).to eq(100_000)
+      expect(pointer?(workspace.path.join('big/other/b.bin'))).to be(true)
+      expect(workspace.dirty?).to be(false)
+    end
+
+    it 'does not download LFS files when a PR workspace is fast-forwarded to a newer head' do
+      allow_any_instance_of(described_class).to receive(:resolve_pr).with('43828').and_return(
+        'kind' => 'pr', 'repository' => 'example/project', 'number' => 43828, 'branch' => 'feature', 'ref' => 'main'
+      )
+      workspace = described_class.create(pr: '43828')
+      File.binwrite(Workspaces::Config.repo_root.join('big/other/b.bin'), 'C' * 100_000)
+      git('add', '.')
+      git('-c', 'core.hooksPath=/dev/null', 'commit', '-m', 'Change an LFS file')
+      newer = git('rev-parse', 'HEAD')
+      allow_any_instance_of(described_class).to receive(:fetch_pr_head).and_return(newer)
+
+      result = workspace.update_from_pr!
+
+      expect(result).to include('updated' => true, 'head' => newer)
+      expect(pointer?(workspace.path.join('big/other/b.bin'))).to be(true)
+      expect(workspace.dirty?).to be(false)
+    end
+
+    it 'does not turn a file someone fetched back into a pointer when stashing and restoring local changes' do
+      workspace = described_class.create(branch: 'main')
+      Open3.capture2e('git', 'lfs', 'pull', '--include=big/keep/**', chdir: workspace.path.to_s)
+      File.write(workspace.path.join('tracked.txt'), 'edited')
+
+      stash = workspace.send(:save_changes)
+      workspace.send(:restore_changes, stash)
+
+      expect(workspace.path.join('big/keep/a.bin').size).to eq(100_000)
+      expect(workspace.path.join('tracked.txt').read).to eq('edited')
+    end
+  end
+
   it 'does not run repository checkout hooks while creating managed worktrees' do
     marker = Workspaces::Config.home.join('hook-executed')
     hooks = Workspaces::Config.home.join('hooks')

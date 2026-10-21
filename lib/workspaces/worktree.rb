@@ -12,6 +12,12 @@ module Workspaces
     class UpdateError < StandardError; end
     AUTH_FAILURE = Regexp.union(/could not read (?:Username|Password)|terminal prompts disabled|Authentication failed/i,
                                 /Permission denied \(publickey\)|gh auth login|HTTP 401|HTTP 403/i)
+    # A project that keeps large files in Git LFS would otherwise copy every one of them into
+    # every workspace at checkout. With smudging skipped they arrive as small pointer files and
+    # `git status` stays clean, so nothing downloads until a recipe asks for it (`lfs.fetch`).
+    # Applied only where the gem writes files from Git itself; it is not applied to stash or
+    # apply, which must never swap a real file someone fetched for its pointer.
+    LFS_POINTERS_ONLY = { 'GIT_LFS_SKIP_SMUDGE' => '1' }.freeze
     METADATA = '.workspace.json'.freeze
     PR_METADATA = '.related-pr'.freeze
     attr_reader :id, :path
@@ -107,7 +113,7 @@ module Workspaces
 
       stash = save_changes
       begin
-        git!('-c', 'core.hooksPath=/dev/null', 'merge', '--ff-only', target, cwd: path)
+        git!('-c', 'core.hooksPath=/dev/null', 'merge', '--ff-only', target, cwd: path, env: LFS_POINTERS_ONLY)
       rescue CommandFailedError
         restore_changes(stash) if stash
         raise UpdateError, 'Could not fast-forward the workspace; local changes were restored'
@@ -117,8 +123,8 @@ module Workspaces
       { 'updated' => true, 'head' => target }
     end
 
-    def git!(*args, cwd: Config.repo_root)
-      output, status = Open3.capture2e(git_environment, 'git', *args, chdir: cwd.to_s)
+    def git!(*args, cwd: Config.repo_root, env: {})
+      output, status = Open3.capture2e(git_environment.merge(env), 'git', *args, chdir: cwd.to_s)
       raise_authentication_error!(output) unless status.success?
       raise CommandFailedError, "git #{args.join(' ')} failed:\n#{output}" unless status.success?
 
@@ -203,7 +209,7 @@ module Workspaces
       raise ArgumentError, 'Workspace branch must not start with a dash' if target_branch.start_with?('-')
 
       Config.worktrees_dir.mkpath
-      git!('-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '-b', target_branch, path.to_s, sha)
+      git!('-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '-b', target_branch, path.to_s, sha, env: LFS_POINTERS_ONLY)
     end
 
     def initialize_worktree!(source, target_branch)
