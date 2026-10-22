@@ -5,7 +5,7 @@ require 'json'
 # polls: reconciled in place by step id, opened and closed by state changes, never fighting
 # a user's own toggle, and the Web server log tab appearing when a backend log exists.
 RSpec.describe 'dashboard step accordions' do
-  def run_polls(polls, user_actions: {})
+  def run_polls(polls, user_actions: {}, server_rendered: [])
     script = <<~'NODE'
       const fs = require('node:fs');
       const vm = require('node:vm');
@@ -72,6 +72,15 @@ RSpec.describe 'dashboard step accordions' do
       const fullPre = new Node('pre'); fullLog.append(fullSummary, fullPre);
       document.reg(fullOutcome);
       steps.append(fullLog);
+      // Accordions the server rendered before the script ran: a summary and a pre, and no controls
+      // container, because the server only emits one for a step that has controls.
+      input.serverRendered.forEach((key) => {
+        const details = new Node('details', { className: 'step-log', dataset: { stepLog: key } });
+        const summary = new Node('summary');
+        summary.append(new Node('span'), new Node('span'), new Node('span'));
+        details.append(summary, new Node('pre'));
+        steps.insertBefore(details, fullLog);
+      });
       const names = ['status', 'summary', 'activity', 'elapsed', 'preview', 'lead-action', 'message',
         'error', 'error-panel', 'connection', 'environment-title', 'environment-disclosure', 'technical-disclosure',
         'actions', 'source-update-message', 'updated'];
@@ -121,7 +130,7 @@ RSpec.describe 'dashboard step accordions' do
         process.stdout.write(JSON.stringify(out));
       })();
     NODE
-    out, status = Open3.capture2('node', '-e', script, JSON.generate(polls: polls, userActions: user_actions))
+    out, status = Open3.capture2('node', '-e', script, JSON.generate(polls: polls, userActions: user_actions, serverRendered: server_rendered))
     raise "node failed: #{out}" unless status.success?
 
     JSON.parse(out)
@@ -229,6 +238,25 @@ RSpec.describe 'dashboard step accordions' do
     first, second, third = run_polls([without, with, without])
 
     expect([first['tabHidden'], second['tabHidden'], third['tabHidden']]).to eq([true, false, false])
+  end
+
+  describe 'accordions rendered by the server' do
+    it 'keeps updating step output and state on every poll, with no controls container to start from' do
+      first, second = run_polls([poll([step('gems', 'active')], { 'gems' => 'one' }),
+                                 poll([step('gems', 'complete', 3.0)], { 'gems' => 'one two' })],
+                                server_rendered: %w(gems))
+
+      expect([first['text']['gems'], second['text']['gems']]).to eq(['one', 'one two'])
+      expect([first['state']['gems'], second['state']['gems']]).to eq(%w(active complete))
+      expect(second['controls']['gems']).to include('hidden' => true)
+    end
+
+    it 'shows the controls on a server-rendered accordion once the workspace is idle' do
+      resume = { 'step_modes' => { 'gems' => %w(only from) } }
+      result = run_polls([poll([step('gems', 'complete', 1.0)], busy: false, resume: resume)], server_rendered: %w(gems))
+
+      expect(result.last['controls']['gems']).to include('hidden' => false, 'labels' => ['Re-run this step', 'Re-run from here'])
+    end
   end
 
   describe 're-run controls' do
