@@ -12,7 +12,7 @@ RSpec.describe Workspaces::Coordinator do
     recipe['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
     path.write(YAML.dump(recipe))
     overrides = Workspaces::EnvironmentOverrides.new(workspace.id)
-    backend = instance_double(Workspaces::Backend, running?: true)
+    backend = instance_double(Workspaces::Backend, running?: true, resumable?: false)
     allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
     workflow = instance_double(Workspaces::Workflow)
     allow(Workspaces::Workflow).to receive(:new).and_return(workflow)
@@ -35,7 +35,7 @@ RSpec.describe Workspaces::Coordinator do
     recipe['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
     path.write(YAML.dump(recipe))
     overrides = Workspaces::EnvironmentOverrides.new(workspace.id)
-    backend = instance_double(Workspaces::Backend, running?: false)
+    backend = instance_double(Workspaces::Backend, running?: false, resumable?: false)
     allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
     workflow = instance_double(Workspaces::Workflow)
     allow(Workspaces::Workflow).to receive(:new).and_return(workflow)
@@ -73,7 +73,7 @@ RSpec.describe Workspaces::Coordinator do
     recipe['environment_presets'] = { 'Admin' => { 'APP_VARIANT' => 'admin' } }
     path.write(YAML.dump(recipe))
     workspace_id = workspace.id
-    backend = instance_double(Workspaces::Backend, running?: true)
+    backend = instance_double(Workspaces::Backend, running?: true, resumable?: false)
     allow(Workspaces::Backend).to receive(:new).with(workspace_id).and_return(backend)
 
     expect { described_class.new.start(workspace_id, preset: 'Admin') }
@@ -166,7 +166,7 @@ RSpec.describe Workspaces::Coordinator do
 
   it 'seeds nil durations before prepare and restart workers and preserves persisted timings in snapshots' do
     state = Workspaces::StateStore.new(Workspaces::Config.state_file)
-    backend = instance_double(Workspaces::Backend, running?: true)
+    backend = instance_double(Workspaces::Backend, running?: true, resumable?: false)
     allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
     workflow = instance_double(Workspaces::Workflow)
     allow(Workspaces::Workflow).to receive(:new).and_return(workflow)
@@ -190,7 +190,7 @@ RSpec.describe Workspaces::Coordinator do
   it 'prepares and restarts without changing branch, fetching, or cleaning agent work' do
     File.write(workspace.path.join('tracked.txt'), 'edited')
     File.write(workspace.path.join('scratch.txt'), 'untracked')
-    backend = instance_double(Workspaces::Backend, running?: true)
+    backend = instance_double(Workspaces::Backend, running?: true, resumable?: false)
     allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(backend)
     workflow = instance_double(Workspaces::Workflow, run!: 30123)
     allow(Workspaces::Workflow).to receive(:new).and_return(workflow)
@@ -207,7 +207,7 @@ RSpec.describe Workspaces::Coordinator do
   end
 
   it 'reports preparation failures and releases the lock' do
-    backend = instance_double(Workspaces::Backend, stop!: nil, running?: false)
+    backend = instance_double(Workspaces::Backend, stop!: nil, running?: false, resumable?: false)
     allow(Workspaces::Backend).to receive(:new).and_return(backend)
     allow(Workspaces::Workflow).to receive(:new).and_raise('token=secret install failed')
     coordinator = described_class.new

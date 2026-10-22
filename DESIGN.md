@@ -57,10 +57,11 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
   - `busy`: "Setting things up…", with the current step as a quiet line and the elapsed time. Technical details open so progress and the log can be watched.
   - `ready`: "Your workspace is ready" with a large **Open workspace** button. Everything else is collapsed.
   - `stopped`: "Your workspace is paused" with a large **Start workspace** button.
-  - `error`/`interrupted`: a plain "Something didn't go to plan" with a large **Retry** button, the error shown, and technical details open.
+  - `error`/`interrupted`: a plain "Something didn't go to plan" with a large **Retry failed step** button (**Continue setup** after an interruption) that names the step in the summary, a subtle **Re-run all steps** beside it, the error shown, and technical details open. When the recorded steps cannot be resumed, the single **Retry** of the earlier design is shown instead.
   - `unknown`: a minimal view with technical details open.
 - **Disclosure behavior**: the server renders the initial open state and the polling script re-applies it from `presentation.open`, but only when the state changes. A section the user opened or closed is left alone on later polls. Sections that are not meaningful in a state are hidden, never shown disabled.
-- **Action buttons**: start, prepare/rebuild, restart server, stop server, and refresh
+- **Per-step re-run controls**: inside each step's accordion, small subtle **Re-run this step** and **Re-run from here** forms aimed at `/workspaces/ID/resume?only=KEY` and `?from=KEY`. The server decides which appear (`presentation.resume.step_modes`), so the page never offers something that would be refused; they are hidden while a run is in progress and are disabled with the other controls while busy.
+- **Action buttons**: start, prepare/rebuild, restart server, stop server, retry failed step, and refresh
 - **Open workspace**: success-styled link available when the server is ready
 - **Lifecycle controls**: hidden while busy (see state machine); helper text distinguishes rebuilding from server-only restart
 - **Step logs (GitHub Actions style)**: setup output is split by recipe step. Each step is a `<details>` row with a status icon (ring, pulsing ring, check or cross), its name, how long it took and a chevron; opening it shows only that step's output. A step that is running or has failed starts open and a completed or waiting one starts closed. The script updates rows in place by step id, and applies the open preference only when a step's state changes, so a row the reader toggled is never reopened or reclosed and what they are reading is never rebuilt.

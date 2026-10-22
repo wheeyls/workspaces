@@ -393,6 +393,20 @@ RSpec.describe Workspaces::DashboardView do
       html[/<details class="step-log"[^>]*data-step-log="#{key}".*?<\/details>/m]
     end
 
+    it 'offers re-run controls inside a step only for the modes the server allows' do
+      resume = { 'step_modes' => { 'gems' => %w(only from), 'ready' => %w(from) }, 'retry_from' => nil }
+      html = render_steps('status' => 'ready', 'resume' => resume)
+
+      expect(step_markup(html, 'gems')).to include('/workspaces/agent-123/resume?only=gems', 'Re-run this step',
+                                                   '/workspaces/agent-123/resume?from=gems', 'Re-run from here')
+      expect(step_markup(html, 'ready')).to include('resume?from=ready')
+      expect(step_markup(html, 'ready')).not_to include('resume?only=')
+    end
+
+    it 'renders no re-run controls when nothing can be re-run' do
+      expect(step_markup(render_steps, 'gems')).not_to include('resume?')
+    end
+
     it 'renders each recipe step as its own accordion carrying only that step\'s output' do
       html = render_steps
 

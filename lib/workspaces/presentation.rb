@@ -6,7 +6,8 @@ module Workspaces
                'preparing' => 'Running setup', 'error' => 'Setup failed',
                'interrupted' => 'Setup interrupted' }.freeze
     ACTIONS = { 'start' => 'Start workspace', 'prepare' => 'Rebuild & restart',
-                'restart' => 'Restart server', 'stop' => 'Stop server' }.freeze
+                'restart' => 'Restart server', 'stop' => 'Stop server',
+                'resume' => 'Retry failed step' }.freeze
 
     # Three layers, from friendly to technical. `lead` is the headline, one sentence and at
     # most one primary action. `environment` (presets and variables) is the area for
@@ -92,7 +93,7 @@ module Workspaces
       { 'title' => title, 'busy' => busy?, 'error' => error, 'steps' => steps,
         'actions' => actions, 'ready' => status == 'ready' && !busy?,
         'state' => state, 'sections' => sections,
-        'headline' => definition[:headline], 'summary' => definition[:summary],
+        'headline' => definition[:headline], 'summary' => summary, 'resume' => resume,
         'lead_action' => lead_action, 'total' => total, 'progress' => progress,
         'current_preset' => current_preset,
         'environment_title' => definition[:environment_title],
@@ -126,13 +127,45 @@ module Workspaces
     end
 
     # The single most useful thing to do next, or nil when the user should just wait.
-    # `open` links straight to the preview; the others are lifecycle form posts.
+    # `open` links straight to the preview; the others are lifecycle form posts. After a failure the
+    # first offer is to carry on from where it stopped; a full re-run stays one click away.
     def lead_action
       case state
       when 'ready' then { 'kind' => 'open', 'label' => 'Open workspace' }
       when 'stopped' then { 'kind' => 'post', 'key' => 'start', 'label' => 'Start workspace' }
-      when 'error', 'interrupted' then retry_action.merge('kind' => 'post')
+      when 'error', 'interrupted' then (retryable? ? resume_action : retry_action).merge('kind' => 'post')
       end
+    end
+
+    # What a re-run of part of the last run could do, for the per-step controls and the retry
+    # wording. Nil while a run is in progress, or when the recorded steps cannot be re-run.
+    def resume
+      info = @snapshot['resume']
+      return nil if busy? || !info.is_a?(Hash)
+
+      failed = steps.find { |step| step['state'] == 'failed' }
+      { 'step_modes' => info['step_modes'] || {}, 'retry_from' => info['retry_from'],
+        'retry_label' => info['retry_label'], 'failed_label' => failed && failed['label'] }
+    end
+
+    def retryable?
+      %w(error interrupted).include?(status) && !resume.nil? && !resume['retry_from'].nil?
+    end
+
+    def resume_action
+      action('resume', true).merge('label' => status == 'interrupted' ? 'Continue setup' : 'Retry failed step')
+    end
+
+    # Plain words for what a retry will do, naming the step. A failure at or after the server step
+    # restarts the server (a failed run stops it), so say where the retry really begins.
+    def summary
+      return definition[:summary] unless retryable?
+
+      info = resume
+      failed = info['failed_label'] || info['retry_label']
+      lead = status == 'interrupted' ? "Setup was interrupted during \"#{failed}\"." : "\"#{failed}\" didn't finish."
+      from = info['retry_label'] == failed ? 'it' : "from \"#{info['retry_label']}\""
+      "#{lead} Retrying runs #{from} again and keeps everything that already finished."
     end
 
     # The preset whose values exactly equal the workspace's saved editable settings, or nil when
@@ -196,6 +229,8 @@ module Workspaces
       return [] if busy?
       available = if status == 'ready'
                     %w(prepare restart stop).map { |key| action(key, false) }
+                  elsif retryable?
+                    [resume_action, retry_action.merge('label' => 'Re-run all steps', 'primary' => false)]
                   elsif %w(error interrupted).include?(status)
                     [retry_action]
                   else

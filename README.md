@@ -98,7 +98,7 @@ the percentage, the elapsed time and, once there is history, an estimate of what
 Every finished run is appended to `build-history.jsonl` in the Workspaces home, one JSON
 object per line, shared by all workspaces of the project. It is written quietly and a failure
 to write it never affects the build. Each record has the time, workspace, operation
-(`prepare` or `restart`), result (`complete` or `failed`), `total_seconds`, the Workspaces
+(`prepare`, `restart` or `resume`), result (`complete` or `failed`), `total_seconds`, the Workspaces
 version, and each step's id, state and seconds. To see which step is getting slower:
 
 ```sh
@@ -141,6 +141,35 @@ the following foreground readiness step must verify it is *this* boot (the runne
 provides `WORKSPACE_RUN_ID`). The runner also supplies `WORKSPACE_URL` and
 `WORKSPACE_HOST` for applications that need browser-facing URLs and host settings.
 `serve` does **not** start workspace backends; use `start` or `restart` for those.
+
+### Re-running part of a run
+
+When a run fails, or is interrupted, you do not have to start over. `resume` continues from the
+first step that did not finish and keeps every earlier step's state, time and log:
+
+```sh
+bin/workspaces resume ID                  # retry from the first unfinished step
+bin/workspaces resume ID --from STEP      # re-run STEP and every step after it
+bin/workspaces resume ID --only STEP      # re-run exactly one step
+```
+
+The dashboard offers the same: **Retry failed step** (or **Continue setup** after an
+interruption) with **Re-run all steps** beside it, and, inside each step, **Re-run this step**
+and **Re-run from here** where they are allowed. `POST /workspaces/ID/resume` takes optional
+`from=STEP` or `only=STEP` query parameters.
+
+A failed run stops the server, so a failure at or after the `background: true` step retries from
+that step, exactly like a restart: the server is started again with a fresh `WORKSPACE_RUN_ID`
+and readiness is checked against it. A failure before the server step retries that step and
+everything after it. Re-running steps *after* the server step, on a workspace whose server is
+still up, reuses that server's port and `WORKSPACE_RUN_ID`, and leaves it running even if
+the step fails.
+
+A re-run never leaves an unfinished step behind (`--from` cannot skip one, `--only` needs every
+other step finished), so a successful one always means a complete workspace. It is refused, in
+plain words, when `.workspaces.yml`'s steps no longer match the ones recorded, when the server
+step is asked for on its own, or when a step after the server is asked for and the server is not
+running. The build history records only the steps that re-ran, with operation `resume`.
 
 The `/workspaces` dashboard lists each managed workspace's setup status, whether its
 backend is running, creation time, and last backend startup. On a workspace's detail

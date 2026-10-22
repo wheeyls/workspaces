@@ -49,6 +49,37 @@ RSpec.describe Workspaces::FrontDoor do
     expect(coordinator).to have_received(:restart).with(workspace.id)
   end
 
+  describe 'resume' do
+    let(:origin) { { 'HTTP_ORIGIN' => 'http://localhost:4747' } }
+
+    before { allow(coordinator).to receive(:rerun).and_return(true) }
+
+    it 'retries from the first unfinished step by default' do
+      path = "/workspaces/#{workspace.id}/resume"
+
+      expect(request(path).first).to eq(405)
+      expect(request(path, method: 'POST', headers: { 'HTTP_ORIGIN' => 'https://evil.test' }).first).to eq(403)
+      expect(coordinator).not_to have_received(:rerun)
+      expect(request(path, method: 'POST', headers: origin).first).to eq(303)
+      expect(coordinator).to have_received(:rerun).with(workspace.id, mode: :retry, key: nil)
+    end
+
+    it 'passes a named step through for from and only' do
+      request("/workspaces/#{workspace.id}/resume?from=assets", method: 'POST', headers: origin)
+      request("/workspaces/#{workspace.id}/resume?only=setup", method: 'POST', headers: origin)
+
+      expect(coordinator).to have_received(:rerun).with(workspace.id, mode: :from, key: 'assets')
+      expect(coordinator).to have_received(:rerun).with(workspace.id, mode: :only, key: 'setup')
+    end
+
+    it 'does not accept both from and only' do
+      status, = request("/workspaces/#{workspace.id}/resume?from=a&only=b", method: 'POST', headers: origin)
+
+      expect(status).to be >= 400
+      expect(coordinator).not_to have_received(:rerun)
+    end
+  end
+
   it 'supports hosted workspace IDs under a one-label wildcard and rejects forwarded-host bypasses' do
       ClimateControl.modify('WORKSPACES_PUBLIC_ORIGIN' => 'https://previews.example.test',
                             'WORKSPACES_BASE_DOMAIN' => 'example.test') do

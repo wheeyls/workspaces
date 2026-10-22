@@ -14,7 +14,7 @@ module Workspaces
     COMMANDS = {
       'serve' => :serve, 'create' => :create, 'list' => :list, 'show' => :show,
       'start' => :lifecycle, 'prepare' => :lifecycle, 'restart' => :lifecycle,
-      'stop' => :stop, 'remove' => :remove, 'help' => :help
+      'stop' => :stop, 'remove' => :remove, 'resume' => :resume, 'help' => :help
     }.freeze
     def self.run(argv)
       new.run(argv.dup)
@@ -50,6 +50,7 @@ module Workspaces
       options = {}
       OptionParser.new do |parser|
         parse_common_options(parser, options)
+        parser.on('--only STEP') { |value| options[:only] = value } if command == 'resume'
         parser.on('--preset NAME') { |value| options[:preset] = value } if %w(create start prepare restart).include?(command)
         if %w(create start prepare restart).include?(command)
           parser.on('--set NAME=VALUE') do |value|
@@ -157,6 +158,24 @@ module Workspaces
       coordinator.wait(id)
     end
 
+    # Re-runs part of the last run: from the first unfinished step by default, from a named step
+    # onward with --from, or exactly one step with --only. Finished steps keep their time and log.
+    def resume(id, options)
+      raise ArgumentError, 'Choose either --from or --only, not both' if options[:from] && options[:only]
+      raise ArgumentError, 'resume needs a workspace ID' unless id
+
+      mode = options[:only] ? :only : (options[:from] ? :from : :retry)
+      action = proc do
+        started = coordinator.rerun(id, mode: mode, key: options[:only] || options[:from])
+        raise ArgumentError, 'Workspace is busy; inspect it with show --json' if !started && coordinator.snapshot(id)['active']
+
+        coordinator.wait(id)
+      end
+      result = options[:json] ? with_stdout_on_stderr(&action) : action.call
+      emit(result, options)
+      raise ArgumentError, result['last_error'] if result['status'] == 'error'
+    end
+
     def stop(id, options)
       registry.with_lock(id) do
         Backend.new(id).stop!
@@ -200,7 +219,8 @@ module Workspaces
 
     def usage
       'Usage: bin/workspaces serve [--require FILE] | create (--branch REF | --pr NUMBER | --new-branch NAME [--from REF]) [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
-        'list [--pr NUMBER] [--json] | show/start/prepare/restart ID [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | stop ID | ' \
+        'list [--pr NUMBER] [--json] | show/start/prepare/restart ID [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
+        'resume ID [--from STEP | --only STEP] [--json] | stop ID | ' \
         'exec ID -- COMMAND... | remove ID [--force]'
     end
 

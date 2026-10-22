@@ -41,9 +41,13 @@ module Workspaces
     end
 
     # Clears every step file; called when a run begins so a restart never shows stale steps.
-    def self.reset(workspace_id)
+    def self.reset(workspace_id, keys: nil)
       dir = Config.step_logs_dir(workspace_id, create: false)
-      Dir.glob(dir.join('*.log')).each { |path| File.delete(path) } if dir.directory?
+      return unless dir.directory?
+
+      Dir.glob(dir.join('*.log')).each do |path|
+        File.delete(path) if keys.nil? || keys.include?(File.basename(path, '.log'))
+      end
     end
 
     private
