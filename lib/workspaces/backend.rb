@@ -25,6 +25,17 @@ module Workspaces
       @state.get(workspace_id)&.fetch('port', nil)
     end
 
+    # The WORKSPACE_RUN_ID the current server was started with. A step that runs after the server
+    # (readiness) has to see the same value, so it is kept while the server lives.
+    def run_id
+      @state.get(workspace_id)&.fetch('run_id', nil)
+    end
+
+    # True only for a server that can be checked by a later step on its own: alive, with its token.
+    def resumable?
+      !!running? && !run_id.to_s.empty?
+    end
+
     def reserve!
       @state.transaction do |data|
         taken = data.values.filter_map { |entry| entry['port'] }
@@ -54,7 +65,7 @@ module Workspaces
       entry = @state.get(workspace_id) || {}
       terminate(entry['pid'], group: entry['process_group']) if entry['pid']
       @state.transaction do |data|
-        %w(pid port process_group).each { |key| data[workspace_id]&.delete(key) }
+        %w(pid port process_group run_id).each { |key| data[workspace_id]&.delete(key) }
       end
     end
 

@@ -7,6 +7,7 @@ require_relative 'presentation'
 require_relative 'environment_overrides'
 require_relative 'duration_format'
 require_relative 'build_history'
+require_relative 'resume_plan'
 
 module Workspaces
   class Coordinator
@@ -26,6 +27,25 @@ module Workspaces
 
     def restart(id, preset: nil, set: {}, unset: [])
       launch(id, restart: true, force: true, prelaunch: settings_update(id, preset, set, unset))
+    end
+
+    # Re-runs part of the last run instead of all of it. `mode` is :retry (continue from the first
+    # step that did not finish), :from (that step and everything after it) or :only (exactly that
+    # step). Finished steps keep their time and log; see ResumePlan for what each mode allows.
+    # Returns false when the workspace is busy and raises ArgumentError (with a plain-language
+    # message) when the request cannot be honoured.
+    def rerun(id, mode: :retry, key: nil)
+      workspace = @registry.find(id)
+      lock = acquire_lock(id)
+      return false unless lock
+
+      plan = rerun_plan(id, mode, key)
+      publish_rerun(id, plan)
+      spawn_worker(workspace, false, lock, plan: plan)
+      true
+    rescue StandardError
+      lock&.close unless lock&.closed?
+      raise
     end
 
     def update_environment(id, set:, remove:)
@@ -101,6 +121,7 @@ module Workspaces
         'completed_at' => entry['completed_at'], 'last_error' => entry['last_error'],
         'operation' => entry['operation'], 'failed_phase' => failure_phase(entry, status),
         'steps' => entry.fetch('steps', []), 'total_seconds' => entry['total_seconds'],
+        'resume' => resume_info(id, entry),
         'estimates' => entry.fetch('estimates', {}),
         'step_logs' => include_log && log == 'setup' ? step_logs(id, entry.fetch('steps', [])) : {},
         'backend_log_available' => backend_log_available?(id),
@@ -140,6 +161,28 @@ module Workspaces
       true
     end
 
+    def resume_info(id, entry)
+      steps = entry['steps']
+      return nil if steps.nil? || steps.empty?
+
+      ResumePlan.describe(recipe_steps: Recipe.new.steps, persisted: steps, server_live: Backend.new(id).resumable?)
+    rescue Recipe::Invalid
+      nil
+    end
+
+    def rerun_plan(id, mode, key)
+      entry = @state.get(id) || {}
+      ResumePlan.build(recipe_steps: Recipe.new.steps, persisted: entry['steps'], mode: mode.to_sym, key: key,
+                       server_live: Backend.new(id).resumable?)
+    end
+
+    def publish_rerun(id, plan)
+      update(id, 'status' => 'preparing', 'message' => "Re-running #{plan.description}",
+                 'steps' => plan.steps, 'estimates' => BuildHistory.estimates(plan.steps.map { |step| step['key'] }),
+                 'operation' => 'resume', 'rerun_keys' => plan.run_keys, 'failed_phase' => nil,
+                 'prepare_started_at' => now, 'completed_at' => nil, 'last_error' => nil, 'total_seconds' => nil)
+    end
+
     def acquire_lock(id)
       Config.locks_dir.mkpath
       # The worker owns this duplicate; closing the request's descriptor must not release its lock.
@@ -157,16 +200,16 @@ module Workspaces
       # is read once per run rather than once per poll.
       update(id, 'status' => 'preparing', 'message' => restart ? 'Restarting application' : 'Preparing workspace',
                  'steps' => steps, 'estimates' => BuildHistory.estimates(steps.map { |step| step['key'] }),
-                 'operation' => restart ? 'restart' : 'prepare', 'failed_phase' => nil,
+                 'operation' => restart ? 'restart' : 'prepare', 'rerun_keys' => nil, 'failed_phase' => nil,
                  'prepare_started_at' => now, 'completed_at' => nil, 'last_error' => nil,
                  'total_seconds' => nil)
     end
 
-    def spawn_worker(workspace, restart, lock)
+    def spawn_worker(workspace, restart, lock, plan: nil)
       id = workspace.id
       workers_mutex.synchronize do
         workers[id] = Thread.new do
-          run(workspace, restart: restart)
+          run(workspace, restart: restart, plan: plan)
         ensure
           lock.close
           workers_mutex.synchronize { workers.delete(id) }
@@ -174,14 +217,15 @@ module Workspaces
       end
     end
 
-    def run(workspace, restart:)
+    def run(workspace, restart:, plan: nil)
       id = workspace.id
       started = monotonic
       File.open(Config.setup_log_path(id), 'a') do |file|
         file.sync = true
         log = TeeLog.new(id, file)
-        log.puts "==> #{restart ? 'restarting' : 'preparing'} workspace #{id}; branch and working files unchanged"
-        prepare_and_boot(workspace, log, restart, started)
+        verb = plan ? "re-running #{plan.description} of" : (restart ? 'restarting' : 'preparing')
+        log.puts "==> #{verb} workspace #{id}; branch and working files unchanged"
+        prepare_and_boot(workspace, log, restart, started, plan)
       end
     rescue StandardError => e
       publish_error(id, e, started)
@@ -189,12 +233,17 @@ module Workspaces
 
     # The wall-clock time of the whole run, boot and readiness included. Step durations add up to
     # less than this because orchestration between steps is not inside any step.
-    def prepare_and_boot(workspace, log, restart, started)
+    def prepare_and_boot(workspace, log, restart, started, plan = nil)
       id = workspace.id
-      port = Workflow.new(workspace, log, state: @state).run!(restart: restart)
+      workflow = Workflow.new(workspace, log, state: @state)
+      # Full runs call the workflow exactly as they always have; only a partial re-run passes a plan.
+      port = plan ? workflow.run!(restart: restart, plan: plan) : workflow.run!(restart: restart)
       total = elapsed_since(started)
-      update(id, 'status' => 'ready', 'message' => 'Workspace ready', 'completed_at' => now, 'port' => port,
-                 'total_seconds' => total)
+      # A re-run that left no server running (a step before it on a stopped workspace) keeps the
+      # recorded port as it was; the workspace then reads as stopped until it is started.
+      attributes = { 'status' => 'ready', 'message' => 'Workspace ready', 'completed_at' => now, 'total_seconds' => total }
+      attributes['port'] = port if port
+      update(id, attributes)
       record_run(id, 'complete', total)
     end
 
@@ -212,8 +261,10 @@ module Workspaces
     # Appends to the build history. A problem here must never change how the run itself ended.
     def record_run(id, result, total_seconds)
       entry = @state.get(id) || {}
+      steps = entry['steps']
+      steps = steps.select { |step| entry['rerun_keys'].include?(step['key']) } if entry['rerun_keys'] && steps
       BuildHistory.record(workspace_id: id, operation: entry['operation'], result: result,
-                          total_seconds: total_seconds, steps: entry['steps'])
+                          total_seconds: total_seconds, steps: steps)
     rescue StandardError
       nil
     end

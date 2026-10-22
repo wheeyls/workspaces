@@ -253,6 +253,56 @@ RSpec.describe Workspaces::Cli do
     expect(coordinator).to have_received(:restart).with('fixture-123', preset: 'Admin', set: {}, unset: [])
   end
 
+  describe 'resume' do
+    let(:coordinator) { instance_double(Workspaces::Coordinator) }
+    let(:cli) { described_class.new.tap { |instance| allow(instance).to receive(:coordinator).and_return(coordinator) } }
+
+    before do
+      allow(coordinator).to receive(:rerun).and_return(true)
+      allow(coordinator).to receive(:wait).with('fixture-123').and_return('status' => 'ready')
+    end
+
+    it 'retries from the first unfinished step by default and waits for the result' do
+      stdout, = capture_streams { expect(cli.run(['resume', 'fixture-123'])).to eq(0) }
+
+      expect(coordinator).to have_received(:rerun).with('fixture-123', mode: :retry, key: nil)
+      expect(stdout).to include('"status": "ready"')
+    end
+
+    it 'accepts --from and --only' do
+      capture_streams do
+        cli.run(['resume', 'fixture-123', '--from', 'assets'])
+        cli.run(['resume', 'fixture-123', '--only', 'setup'])
+      end
+
+      expect(coordinator).to have_received(:rerun).with('fixture-123', mode: :from, key: 'assets')
+      expect(coordinator).to have_received(:rerun).with('fixture-123', mode: :only, key: 'setup')
+    end
+
+    it 'rejects --from together with --only before doing anything' do
+      _, stderr = capture_streams { expect(cli.run(['resume', 'fixture-123', '--from', 'a', '--only', 'b'])).not_to eq(0) }
+
+      expect(stderr).to include('either --from or --only')
+      expect(coordinator).not_to have_received(:rerun)
+    end
+
+    it 'shows the refusal in plain words' do
+      allow(coordinator).to receive(:rerun).and_raise(ArgumentError, 'Every step already completed, so there is nothing to retry')
+
+      _, stderr = capture_streams { expect(cli.run(['resume', 'fixture-123'])).not_to eq(0) }
+
+      expect(stderr).to include('nothing to retry')
+    end
+
+    it 'fails with the run error when the re-run itself fails' do
+      allow(coordinator).to receive(:wait).and_return('status' => 'error', 'last_error' => 'RuntimeError: boom')
+
+      _, stderr = capture_streams { expect(cli.run(['resume', 'fixture-123'])).not_to eq(0) }
+
+      expect(stderr).to include('boom')
+    end
+  end
+
   it 'creates with repeated sets, unsets, and a preset while rejecting invalid input before creation' do
     repository
     root = Workspaces::Config.repo_root

@@ -10,7 +10,7 @@ require_relative 'proxy_middleware'
 module Workspaces
   class FrontDoor
     WORKSPACE_ROUTE = %r{\A/workspaces/([a-z0-9]+(?:-[a-z0-9]+)*)
-                          (?:/(status|start|prepare|restart|stop|remove|update-pr|environment))?\z}x
+                          (?:/(status|start|prepare|restart|resume|stop|remove|update-pr|environment))?\z}x
 
     # Rack env keys set on requests that reach a ready workspace backend, for use by
     # middleware registered with Workspaces.configure_proxy.
@@ -94,7 +94,7 @@ module Workspaces
       return remove(request, id) if action == 'remove'
       return update_pr(id) if action == 'update-pr'
 
-      perform_action(id, action)
+      perform_action(id, action, request)
       redirect(Config.dashboard_url(id))
     end
 
@@ -109,11 +109,23 @@ module Workspaces
       response(200, body, type: action ? 'application/json' : 'text/html', head: request.head?)
     end
 
-    def perform_action(id, action)
+    # Retries from the first unfinished step by default; `from=<step>` re-runs that step and every
+    # one after it, `only=<step>` re-runs exactly that step.
+    def resume(id, request)
+      from = request&.params&.fetch('from', nil)
+      only = request&.params&.fetch('only', nil)
+      raise ArgumentError, 'Choose either from or only, not both' if from && only
+
+      mode = only ? :only : (from ? :from : :retry)
+      @coordinator.rerun(id, mode: mode, key: only || from)
+    end
+
+    def perform_action(id, action, request = nil)
       case action
       when 'start' then @coordinator.start(id)
       when 'prepare' then @coordinator.start(id, force: true)
       when 'restart' then @coordinator.restart(id)
+      when 'resume' then resume(id, request)
       when 'stop' then stop(id)
       end
     end

@@ -16,20 +16,28 @@ module Workspaces
       @backend = Backend.new(workspace.id)
     end
 
-    def run!(restart: false)
+    # `plan` (a ResumePlan::Plan) re-runs part of the recipe: finished steps keep their state, time
+    # and log, only the planned steps start over, and the server is stopped and restarted only when
+    # the planned steps include the one that starts it. Without a plan the whole operation runs.
+    #
+    # Returns the server's port, or nil when no server is running afterwards (which can only happen
+    # when a plan re-ran a step before the server on a workspace whose server was stopped).
+    def run!(restart: false, plan: nil)
       recipe = Recipe.new
       overrides = EnvironmentOverrides.new(@workspace.id).load
-      steps = recipe.for_operation(restart: restart)
-      publish_steps(steps)
-      StepLog.reset(@workspace.id)
-      @backend.stop!
-      context = build_context(@backend.reserve!)
+      steps = plan ? recipe.steps.select { |step| plan.run_keys.include?(step['id']) } : recipe.for_operation(restart: restart)
+      plan ? @state.set(@workspace.id, 'steps' => plan.steps) : publish_steps(steps)
+      StepLog.reset(@workspace.id, keys: plan&.run_keys)
+      context = prepare_server(plan)
       runner = CommandRunner.new(@workspace.path, @log)
       steps.each { |step| execute(step, recipe, context, runner, overrides) }
-      @backend.ensure_alive!
-      @backend.port
+      return finish_full_run if plan.nil? || plan.touches_server || plan.after_server
+
+      @backend.running? ? @backend.port : nil
     rescue StandardError
-      @backend.stop!
+      # A server this run started (or would have replaced) is not trustworthy after a failure. One
+      # this run never touched is left as it was.
+      @backend.stop! if plan.nil? || plan.touches_server
       raise
     ensure
       @log.finish_step
@@ -37,19 +45,38 @@ module Workspaces
 
     private
 
+    # Stops the old server and reserves a fresh port and token when this run will start the server;
+    # otherwise the running server's own port and token are reused, so steps see the same values.
+    def prepare_server(plan)
+      if plan.nil? || plan.touches_server
+        @backend.stop!
+        return build_context(@backend.reserve!)
+      end
+
+      @server_started = plan.after_server
+      build_context(@backend.port, run_id: @backend.run_id)
+    end
+
+    # A run that covers the server step (or follows it) ends with a liveness check, exactly as a
+    # full run always has, and reports the port of the server it leaves running.
+    def finish_full_run
+      @backend.ensure_alive!
+      @backend.port
+    end
+
     def publish_steps(steps)
       @state.set(@workspace.id, 'steps' => steps.map do |step|
         { 'key' => step['id'], 'label' => step['name'], 'state' => 'pending', 'duration_seconds' => nil }
       end)
     end
 
-    def build_context(port)
+    def build_context(port, run_id: nil)
       {
         'WORKSPACE_ID' => @workspace.id, 'WORKSPACE_PATH' => @workspace.path.to_s,
         'WORKSPACE_REPO_ROOT' => Config.repo_root.to_s, 'WORKSPACE_PORT' => port.to_s,
         'WORKSPACE_URL' => Config.preview_url(@workspace.id).delete_suffix('/'),
         'WORKSPACE_HOST' => Config.preview_host(@workspace.id),
-        'WORKSPACE_CACHE_DIR' => Config.home.to_s, 'WORKSPACE_RUN_ID' => SecureRandom.hex(24)
+        'WORKSPACE_CACHE_DIR' => Config.home.to_s, 'WORKSPACE_RUN_ID' => run_id || SecureRandom.hex(24)
       }
     end
 
@@ -62,6 +89,7 @@ module Workspaces
       env = recipe.env(step, context, overrides: overrides)
       if step['background']
         @backend.start!(@workspace, command, env: env)
+        @state.set(@workspace.id, 'run_id' => context.fetch('WORKSPACE_RUN_ID'))
       else
         runner.run!(command, env: env, timeout: step.fetch('timeout'))
         @backend.ensure_alive! if @server_started
