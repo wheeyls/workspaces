@@ -226,6 +226,25 @@ module Workspaces
 
     # One GitHub-Actions-style accordion per recipe step. A step that is running or has
     # failed starts open; a completed or not-yet-started one starts closed.
+    # Small forms for re-running just this step or this step and everything after it, shown only
+    # for what the workspace can actually do right now (the server decides, not the page).
+    def step_controls(step)
+      modes = @presentation.dig('resume', 'step_modes')&.fetch(step['key'], nil)
+      return '' if modes.nil? || modes.empty?
+
+      last = @presentation['steps'].last
+      key = ERB::Util.url_encode(step['key'].to_s)
+      forms = []
+      forms << step_control(key, 'only', 'Re-run this step') if modes.include?('only')
+      forms << step_control(key, 'from', 'Re-run from here') if modes.include?('from') && !(modes.include?('only') && last && last['key'] == step['key'])
+      %(<div class="step-log__actions">#{forms.join}</div>)
+    end
+
+    def step_control(key, mode, label)
+      "<form method=\"post\" action=\"/workspaces/#{@id}/resume?#{mode}=#{key}\">" \
+        "<button class=\"button button--subtle button--small\">#{label}</button></form>"
+    end
+
     def step_accordion(step)
       key = escape(step['key'])
       state = escape(step['state'])
@@ -235,6 +254,7 @@ module Workspaces
       <<~HTML
         <details class="step-log" data-step-log="#{key}" data-step-state="#{state}"#{open}#{current}>
           <summary><span class="step-log__status" aria-hidden="true"></span><span class="step-log__name">#{escape(step['label'])}</span><span class="step-log__outcome step-outcome">#{escape(step_outcome(step))}</span></summary>
+          #{step_controls(step)}
           <pre tabindex="0" aria-label="#{escape(step['label'])} output">#{entry ? escape(entry['text']) : ''}</pre>
         </details>
       HTML

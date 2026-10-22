@@ -51,6 +51,7 @@ RSpec.describe 'dashboard step accordions' do
           if (p === '[data-section]') return 'section' in n.dataset;
           if (p === 'summary') return n.tagName === 'SUMMARY';
           if (p === 'pre') return n.tagName === 'PRE';
+          if (p === '.step-log__actions') return n.className === 'step-log__actions';
           if (p === '.workspace-actions button' || p === '.workspace-actions button, .lead__action button') return false;
           return false;
         });
@@ -108,8 +109,12 @@ RSpec.describe 'dashboard step accordions' do
             state: Object.fromEntries(steps.children.map((c) => [c.dataset.stepLog, c.dataset.stepState || null])),
             names: Object.fromEntries(steps.children.filter((c) => c !== fullLog).map((c) => [c.dataset.stepLog, c.children[0].children[1].textContent])),
             outcomes: Object.fromEntries(steps.children.filter((c) => c !== fullLog).map((c) => [c.dataset.stepLog, c.children[0].children[2].textContent])),
-            text: Object.fromEntries(steps.children.filter((c) => c !== fullLog).map((c) => [c.dataset.stepLog, c.children[1].textContent])),
+            text: Object.fromEntries(steps.children.filter((c) => c !== fullLog).map((c) => [c.dataset.stepLog, c.querySelector('pre').textContent])),
             current: Object.fromEntries(steps.children.filter((c) => c !== fullLog).map((c) => [c.dataset.stepLog, c.attributes['aria-current'] || null])),
+            controls: Object.fromEntries(steps.children.filter((c) => c !== fullLog).map((c) => {
+              const holder = c.querySelector('.step-log__actions');
+              return [c.dataset.stepLog, { hidden: holder.hidden, actions: holder.children.map((f) => f.action), labels: holder.children.map((f) => f.children[0].textContent) }];
+            })),
             fullText: fullPre.textContent, tabHidden: backendTab.hidden, fullOutcome: fullOutcome.textContent
           });
         }
@@ -126,8 +131,9 @@ RSpec.describe 'dashboard step accordions' do
     { 'key' => key, 'label' => key.capitalize, 'state' => state, 'duration_seconds' => duration }
   end
 
-  def poll(steps, logs = {}, backend: false, tail: '', total: nil, busy: true)
+  def poll(steps, logs = {}, backend: false, tail: '', total: nil, busy: true, resume: nil)
     { 'presentation' => { 'state' => busy ? 'busy' : 'ready', 'busy' => busy, 'ready' => !busy, 'error' => '', 'steps' => steps, 'total' => total,
+                          'resume' => resume,
                           'actions' => [], 'sections' => {}, 'headline' => 'h', 'summary' => 's',
                           'lead_action' => nil, 'environment_title' => 't', 'environment_submit' => 'x',
                           'open' => { 'environment' => false, 'technical' => true } },
@@ -223,5 +229,44 @@ RSpec.describe 'dashboard step accordions' do
     first, second, third = run_polls([without, with, without])
 
     expect([first['tabHidden'], second['tabHidden'], third['tabHidden']]).to eq([true, false, false])
+  end
+
+  describe 're-run controls' do
+    let(:steps) { [step('gems', 'complete', 1.0), step('ready', 'complete', 2.0)] }
+
+    it 'shows only the re-run forms the server allows, aimed at the resume route' do
+      resume = { 'step_modes' => { 'gems' => %w(only from), 'ready' => %w(from) } }
+      result = run_polls([poll(steps, busy: false, resume: resume)]).last['controls']
+
+      expect(result['gems']).to include('hidden' => false, 'labels' => ['Re-run this step', 'Re-run from here'],
+                                        'actions' => ['/workspaces/ws-1/resume?only=gems', '/workspaces/ws-1/resume?from=gems'])
+      expect(result['ready']).to include('hidden' => false, 'actions' => ['/workspaces/ws-1/resume?from=ready'])
+    end
+
+    it 'hides the controls when nothing can be re-run, and again once a run starts' do
+      resume = { 'step_modes' => { 'gems' => %w(only from), 'ready' => %w(from) } }
+      polls = [poll(steps, busy: false, resume: resume), poll(steps, busy: true, resume: nil),
+               poll(steps, busy: false, resume: { 'step_modes' => { 'gems' => [], 'ready' => [] } })]
+      results = run_polls(polls).map { |entry| entry['controls'] }
+
+      expect(results[0]['gems']['hidden']).to be(false)
+      expect(results[1]['gems']).to include('hidden' => true, 'actions' => [])
+      expect(results[2]['gems']).to include('hidden' => true, 'actions' => [])
+    end
+
+    it 'does not rebuild the forms on a poll that changes nothing' do
+      resume = { 'step_modes' => { 'gems' => %w(only from), 'ready' => %w(from) } }
+      first, second = run_polls([poll(steps, busy: false, resume: resume), poll(steps, busy: false, resume: resume)])
+
+      expect(second['controls']).to eq(first['controls'])
+    end
+
+    it 'encodes a step key that needs it' do
+      odd = [step('a b&c', 'complete', 1.0)]
+      resume = { 'step_modes' => { 'a b&c' => %w(only) } }
+
+      expect(run_polls([poll(odd, busy: false, resume: resume)]).last['controls']['a b&c']['actions'])
+        .to eq(['/workspaces/ws-1/resume?only=a%20b%26c'])
+    end
   end
 end

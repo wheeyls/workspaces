@@ -75,6 +75,56 @@ RSpec.describe Workspaces::Presentation do
     expect(view['actions'].map { |a| a['label'] }).to eq(['Retry setup'])
   end
 
+  describe 'retrying from the failed step' do
+    let(:steps) do
+      [{ 'key' => 'gems', 'label' => 'Install gems', 'state' => 'complete' },
+       { 'key' => 'ready', 'label' => 'Readiness', 'state' => 'failed' }]
+    end
+    let(:resume) do
+      { 'retry_from' => 'ready', 'retry_label' => 'Readiness',
+        'step_modes' => { 'gems' => %w(from), 'ready' => %w(from) } }
+    end
+
+    it 'leads with the retry, keeps a full re-run as the second choice, and names the step' do
+      view = present('status' => 'error', 'operation' => 'prepare', 'last_error' => 'boom', 'steps' => steps, 'resume' => resume)
+
+      expect(view['lead_action']).to include('kind' => 'post', 'key' => 'resume', 'label' => 'Retry failed step')
+      expect(view['actions']).to eq([{ 'key' => 'resume', 'label' => 'Retry failed step', 'primary' => true },
+                                     { 'key' => 'prepare', 'label' => 'Re-run all steps', 'primary' => false }])
+      expect(view['summary']).to include('"Readiness" didn\'t finish', 'keeps everything that already finished')
+    end
+
+    it 'says where a retry really begins when it has to start earlier than the failed step' do
+      resume['retry_label'] = 'Start server'
+      view = present('status' => 'error', 'operation' => 'prepare', 'steps' => steps, 'resume' => resume)
+
+      expect(view['summary']).to include('"Readiness" didn\'t finish', 'from "Start server"')
+    end
+
+    it 'calls a retry after an interruption "Continue setup"' do
+      view = present('status' => 'interrupted', 'operation' => 'prepare', 'steps' => steps, 'resume' => resume)
+
+      expect(view['lead_action']).to include('key' => 'resume', 'label' => 'Continue setup')
+      expect(view['summary']).to include('interrupted during')
+    end
+
+    it 'falls back to the full re-run when nothing can be resumed' do
+      view = present('status' => 'error', 'operation' => 'prepare', 'steps' => steps, 'resume' => nil)
+
+      expect(view['lead_action']).to include('key' => 'prepare', 'label' => 'Retry setup')
+      expect(view['actions'].map { |action| action['key'] }).to eq(%w(prepare))
+    end
+
+    it 'exposes per-step re-run modes only while idle' do
+      ready = present('status' => 'ready', 'running' => true, 'steps' => steps.map { |s| s.merge('state' => 'complete') },
+                      'resume' => resume.merge('retry_from' => nil, 'step_modes' => { 'gems' => %w(only from) }))
+      busy = present('status' => 'preparing', 'active' => true, 'steps' => steps, 'resume' => resume)
+
+      expect(ready['resume']['step_modes']).to eq('gems' => %w(only from))
+      expect(busy['resume']).to be_nil
+    end
+  end
+
   it 'opens the technical details on a failure so the cause is never hidden, and offers retry up front' do
     view = present('status' => 'error', 'operation' => 'restart', 'last_error' => 'boom',
                    'steps' => [{ 'key' => 'a', 'label' => 'A', 'state' => 'failed' }])
