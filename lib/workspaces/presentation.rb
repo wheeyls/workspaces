@@ -3,11 +3,13 @@ require_relative 'progress'
 module Workspaces
   class Presentation
     TITLES = { 'idle' => 'Ready to start', 'stopped' => 'Server stopped', 'ready' => 'Workspace ready',
+               'sleeping' => 'Workspace asleep',
                'preparing' => 'Running setup', 'error' => 'Setup failed',
                'interrupted' => 'Setup interrupted' }.freeze
     ACTIONS = { 'start' => 'Start workspace', 'prepare' => 'Rebuild & restart',
                 'restart' => 'Restart server', 'stop' => 'Stop server',
-                'resume' => 'Retry failed step' }.freeze
+                'resume' => 'Retry failed step', 'keep-awake' => 'Keep awake',
+                'allow-sleep' => 'Allow sleep' }.freeze
 
     # Three layers, from friendly to technical. `lead` is the headline, one sentence and at
     # most one primary action. `environment` (presets and variables) is the area for
@@ -55,6 +57,14 @@ module Workspaces
         environment_submit: 'Save & restart', environment_title: 'Change settings',
         open_environment: false, open_technical: false
       },
+      'sleeping' => {
+        sections: %w(lead environment) + TECHNICAL,
+        headline: 'Your workspace is asleep',
+        summary: 'It went quiet, so its server was stopped to free up resources. Your files and data are kept. ' \
+                 'Opening the preview wakes it in a few seconds.',
+        environment_submit: 'Save & start', environment_title: 'Change settings',
+        open_environment: false, open_technical: false
+      },
       'stopped' => {
         sections: %w(lead environment) + TECHNICAL,
         headline: 'Your workspace is paused',
@@ -95,7 +105,7 @@ module Workspaces
         'state' => state, 'sections' => sections,
         'headline' => definition[:headline], 'summary' => summary, 'resume' => resume,
         'lead_action' => lead_action, 'total' => total, 'progress' => progress,
-        'current_preset' => current_preset,
+        'current_preset' => current_preset, 'sleep' => sleep_info,
         'environment_title' => definition[:environment_title],
         'environment_submit' => definition[:environment_submit],
         'open' => { 'environment' => definition[:open_environment], 'technical' => definition[:open_technical] } }
@@ -105,6 +115,14 @@ module Workspaces
 
     def status
       @snapshot.fetch('status', 'idle')
+    end
+
+    # What the page needs to explain sleeping: whether this workspace is kept awake, and after how
+    # long an idle one sleeps. Nil for states where sleeping is not in play.
+    def sleep_info
+      return nil unless %w(ready sleeping).include?(status) && !@snapshot['sleep_after_seconds'].nil?
+
+      { 'keep_awake' => !!@snapshot['keep_awake'], 'after_seconds' => @snapshot['sleep_after_seconds'] }
     end
 
     def busy?
@@ -133,6 +151,7 @@ module Workspaces
       case state
       when 'ready' then { 'kind' => 'open', 'label' => 'Open workspace' }
       when 'stopped' then { 'kind' => 'post', 'key' => 'start', 'label' => 'Start workspace' }
+      when 'sleeping' then { 'kind' => 'post', 'key' => 'start', 'label' => 'Wake workspace' }
       when 'error', 'interrupted' then (retryable? ? resume_action : retry_action).merge('kind' => 'post')
       end
     end
@@ -228,7 +247,9 @@ module Workspaces
     def actions
       return [] if busy?
       available = if status == 'ready'
-                    %w(prepare restart stop).map { |key| action(key, false) }
+                    %w(prepare restart stop).map { |key| action(key, false) } + keep_awake_actions
+                  elsif status == 'sleeping'
+                    [action('start', true).merge('label' => 'Wake workspace')] + keep_awake_actions
                   elsif retryable?
                     [resume_action, retry_action.merge('label' => 'Re-run all steps', 'primary' => false)]
                   elsif %w(error interrupted).include?(status)
@@ -239,6 +260,12 @@ module Workspaces
       available << { 'key' => 'update-pr', 'label' => 'Update from PR', 'primary' => false } if @snapshot.dig('source', 'kind') == 'pr'
       available
 
+    end
+
+    def keep_awake_actions
+      return [] if @snapshot['sleep_after_seconds'].nil?
+
+      [action(@snapshot['keep_awake'] ? 'allow-sleep' : 'keep-awake', false)]
     end
 
     def retry_action

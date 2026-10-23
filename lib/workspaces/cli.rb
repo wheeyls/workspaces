@@ -8,13 +8,16 @@ require_relative 'front_door'
 require_relative 'proxy_middleware'
 require_relative 'tls'
 require_relative 'child_env'
+require_relative 'activity_tracker'
+require_relative 'sleeper'
+require_relative 'duration_format'
 
 module Workspaces
   class Cli
     COMMANDS = {
       'serve' => :serve, 'create' => :create, 'list' => :list, 'show' => :show,
       'start' => :lifecycle, 'prepare' => :lifecycle, 'restart' => :lifecycle,
-      'stop' => :stop, 'remove' => :remove, 'resume' => :resume, 'help' => :help
+      'stop' => :stop, 'remove' => :remove, 'resume' => :resume, 'keep-awake' => :keep_awake, 'help' => :help
     }.freeze
     def self.run(argv)
       new.run(argv.dup)
@@ -85,6 +88,7 @@ module Workspaces
       parser.on('--from REF') { |value| options[:from] = value }
       parser.on('--json') { options[:json] = true }
       parser.on('--force') { options[:force] = true }
+      parser.on('--off') { options[:off] = true }
     end
 
     def parse_tls_options(parser, options)
@@ -110,7 +114,20 @@ module Workspaces
       puts "Dashboard: #{Config.public_origin}/workspaces"
       puts "Managed directory: #{Config.worktrees_dir}"
       print_tls_exports(tls)
-      Rackup::Handler::Puma.run(FrontDoor.new, **puma_options(tls))
+      tracker = ActivityTracker.new
+      sleeper = Sleeper.new(coordinator: coordinator, tracker: tracker).start
+      puts sleep_banner
+      begin
+        Rackup::Handler::Puma.run(FrontDoor.new(coordinator: coordinator, registry: registry, tracker: tracker),
+                                  **puma_options(tls))
+      ensure
+        sleeper.stop
+      end
+    end
+
+    def sleep_banner
+      seconds = Config.sleep_after_seconds
+      seconds ? "Idle workspaces sleep after #{DurationFormat.call(seconds)} without preview traffic" : 'Idle sleep is off'
     end
 
     def print_tls_exports(tls)
@@ -177,10 +194,15 @@ module Workspaces
     end
 
     def stop(id, options)
-      registry.with_lock(id) do
-        Backend.new(id).stop!
-        StateStore.new(Config.state_file).set(id, 'status' => 'stopped', 'message' => 'Server stopped')
-      end
+      coordinator.stop(id)
+      emit(coordinator.snapshot(id), options)
+    end
+
+    # Exempts a workspace from sleeping (or, with --off, lets it sleep again).
+    def keep_awake(id, options)
+      raise ArgumentError, 'keep-awake needs a workspace ID' unless id
+
+      coordinator.keep_awake(id, !options[:off])
       emit(coordinator.snapshot(id), options)
     end
 
@@ -220,7 +242,7 @@ module Workspaces
     def usage
       'Usage: bin/workspaces serve [--require FILE] | create (--branch REF | --pr NUMBER | --new-branch NAME [--from REF]) [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
         'list [--pr NUMBER] [--json] | show/start/prepare/restart ID [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
-        'resume ID [--from STEP | --only STEP] [--json] | stop ID | ' \
+        'resume ID [--from STEP | --only STEP] [--json] | stop ID | keep-awake ID [--off] | ' \
         'exec ID -- COMMAND... | remove ID [--force]'
     end
 

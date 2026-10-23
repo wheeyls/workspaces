@@ -22,6 +22,12 @@ module Workspaces
     end
 
     def start(id, force: false, preset: nil, set: {}, unset: [])
+      if !force && sleeping?(id)
+        return wake(id) unless preset || !set.empty? || !unset.empty?
+
+        return launch(id, restart: true, force: true, prelaunch: settings_update(id, preset, set, unset))
+      end
+
       launch(id, restart: false, force: force, prelaunch: settings_update(id, preset, set, unset))
     end
 
@@ -49,7 +55,7 @@ module Workspaces
     end
 
     def update_environment(id, set:, remove:)
-      restart = Backend.new(id).running?
+      restart = Backend.new(id).running? || sleeping?(id)
       launch(id, restart: restart, force: true,
                  prelaunch: lambda { |_workspace|
                    Recipe.new
@@ -58,12 +64,111 @@ module Workspaces
     end
 
     def replace_editable_environment(id, text:)
-      restart = Backend.new(id).running?
+      restart = Backend.new(id).running? || sleeping?(id)
       launch(id, restart: restart, force: true,
                  prelaunch: lambda { |_workspace|
                    defaults = Recipe.new.default_editable_env
                    EnvironmentOverrides.new(id).replace_editable(text, defaults: defaults)
                  })
+    end
+
+    # Stops an idle workspace's server and keeps everything else: worktree, database, dependencies,
+    # built assets, settings and build history. Returns true when it slept. Does nothing (false) while
+    # the workspace is busy, is kept awake, is not running, or is already asleep.
+    def sleep!(id)
+      @registry.find(id)
+      lock = acquire_lock(id)
+      return false unless lock
+
+      begin
+        entry = @state.get(id) || {}
+        return false unless sleepable?(id, entry)
+
+        update(id, 'sleep_state' => 'sleeping', 'slept_at' => now)
+        begin
+          Backend.new(id).stop!
+        rescue StandardError
+          update(id, 'sleep_state' => nil, 'slept_at' => nil)
+          raise
+        end
+        true
+      ensure
+        lock.close
+      end
+    end
+
+    # Starts a sleeping workspace's server again and returns at once; the caller watches for readiness.
+    # Only a workspace that is intentionally asleep is woken: one that was stopped by hand, failed,
+    # or is already starting is left alone (false). Concurrent callers share one wake because only
+    # the one holding the workspace lock gets past the check.
+    def wake(id)
+      workspace = @registry.find(id)
+      lock = acquire_lock(id)
+      return false unless lock
+
+      entry = @state.get(id) || {}
+      if entry['sleep_state'] != 'sleeping' || Backend.new(id).running?
+        lock.close
+        return false
+      end
+
+      restart = preparation_current?(entry)
+      publish_starting(id, restart, extra: { 'sleep_state' => 'waking', 'message' => 'Waking workspace' })
+      spawn_worker(workspace, restart, lock)
+      true
+    rescue StandardError
+      lock&.close unless lock&.closed?
+      raise
+    end
+
+    # Stops the server by hand. A workspace stopped this way is not asleep, so traffic never wakes it.
+    def stop(id)
+      @registry.with_lock(id) do
+        Backend.new(id).stop!
+        @state.set(id, 'status' => 'stopped', 'message' => 'Server stopped', 'sleep_state' => nil, 'slept_at' => nil)
+      end
+    end
+
+    def keep_awake(id, enabled)
+      @registry.find(id)
+      @state.set(id, 'keep_awake' => !!enabled)
+      !!enabled
+    end
+
+    def sleeping?(id)
+      (@state.get(id) || {})['sleep_state'] == 'sleeping'
+    end
+
+    # :sleeping, :waking (a wake is running), or nil.
+    def sleep_phase(id)
+      case (@state.get(id) || {})['sleep_state']
+      when 'sleeping' then :sleeping
+      when 'waking' then locked?(id) ? :waking : nil
+      end
+    end
+
+    def status_of(id)
+      entry = @state.get(id) || {}
+      resolve_status(id, entry, locked?(id))
+    end
+
+    # Workspaces that look ready, are not kept awake and are not asleep. A cheap read of the state
+    # file; `sleep!` checks everything again under the workspace lock.
+    def sleep_candidates
+      @state.all.filter_map do |id, entry|
+        id if entry['status'] == 'ready' && !entry['keep_awake'] && entry['sleep_state'].nil?
+      end
+    end
+
+    # Run once when a front door starts. A sleep that was cut short is finished, and a wake that was
+    # cut short is cleared, so the workspace reads as interrupted rather than as waking forever.
+    def reconcile_sleep
+      @state.all.each do |id, entry|
+        case entry['sleep_state']
+        when 'sleeping' then finish_interrupted_sleep(id)
+        when 'waking' then @state.set(id, 'sleep_state' => nil) unless locked?(id)
+        end
+      end
     end
 
     def wait(id)
@@ -77,7 +182,7 @@ module Workspaces
       workspace = @registry.find(id)
       entry = @state.get(id) || {}
       busy = locked?(id)
-      status = resolve_status(id, entry.fetch('status', 'idle'), busy)
+      status = resolve_status(id, entry, busy)
       data = workspace.describe.merge(snapshot_fields(id, entry, busy, status, log, include_log))
       data.merge('presentation' => Presentation.new(data).to_h)
     end
@@ -87,7 +192,7 @@ module Workspaces
         id = workspace.fetch('id')
         entry = @state.get(id) || {}
         busy = locked?(id)
-        workspace.merge('status' => resolve_status(id, entry.fetch('status', 'idle'), busy),
+        workspace.merge('status' => resolve_status(id, entry, busy),
                         'running' => !!Backend.new(id).running?, 'active' => busy,
                         'started_at' => entry['started_at'])
       end
@@ -103,17 +208,43 @@ module Workspaces
       end
     end
 
-    def resolve_status(id, status, busy)
+    def resolve_status(id, entry, busy)
+      status = entry.fetch('status', 'idle')
       return busy ? status : 'interrupted' if ACTIVE.include?(status)
       return status if status == 'error'
       return 'ready' if Backend.new(id).running?
+      return 'sleeping' if entry['sleep_state'] == 'sleeping'
 
       status == 'ready' ? 'stopped' : status
+    end
+
+    def sleepable?(id, entry)
+      entry['status'] == 'ready' && !entry['keep_awake'] && entry['sleep_state'].nil? && Backend.new(id).running?
+    end
+
+    # What was prepared still matches the recipe, so waking only needs the server and readiness steps.
+    # A workspace prepared before this was recorded is trusted.
+    def preparation_current?(entry)
+      recorded = entry['prepared_digest']
+      recorded.nil? || recorded == Recipe.new.preparation_digest
+    end
+
+    def finish_interrupted_sleep(id)
+      lock = acquire_lock(id)
+      return unless lock
+
+      begin
+        Backend.new(id).stop! if Backend.new(id).running?
+      ensure
+        lock.close
+      end
     end
 
     def snapshot_fields(id, entry, busy, status, log, include_log)
       {
         'workspace_id' => id, 'status' => status, 'active' => busy,
+        'sleeping' => status == 'sleeping', 'slept_at' => entry['slept_at'],
+        'keep_awake' => !!entry['keep_awake'], 'sleep_after_seconds' => Config.sleep_after_seconds,
         'message' => status == entry['status'] ? entry['message'] : status.capitalize,
         'prepare_started_at' => entry['prepare_started_at'], 'started_at' => entry['started_at'],
         'running' => !!Backend.new(id).running?, 'updated_at' => entry['updated_at'],
@@ -191,18 +322,20 @@ module Workspaces
       end
     end
 
-    def publish_starting(id, restart)
+    def publish_starting(id, restart, extra: {})
       recipe = Recipe.new
       steps = recipe.for_operation(restart: restart).map do |step|
         { 'key' => step['id'], 'label' => step['name'], 'state' => 'pending', 'duration_seconds' => nil }
       end
       # Frozen for the whole run, so the bar does not shift under the reader and the history file
       # is read once per run rather than once per poll.
-      update(id, 'status' => 'preparing', 'message' => restart ? 'Restarting application' : 'Preparing workspace',
+      update(id, {
+                 'status' => 'preparing', 'message' => restart ? 'Restarting application' : 'Preparing workspace',
                  'steps' => steps, 'estimates' => BuildHistory.estimates(steps.map { |step| step['key'] }),
                  'operation' => restart ? 'restart' : 'prepare', 'rerun_keys' => nil, 'failed_phase' => nil,
                  'prepare_started_at' => now, 'completed_at' => nil, 'last_error' => nil,
-                 'total_seconds' => nil)
+                 'total_seconds' => nil, 'sleep_state' => nil, 'slept_at' => nil
+               }.merge(extra))
     end
 
     def spawn_worker(workspace, restart, lock, plan: nil)
@@ -241,8 +374,10 @@ module Workspaces
       total = elapsed_since(started)
       # A re-run that left no server running (a step before it on a stopped workspace) keeps the
       # recorded port as it was; the workspace then reads as stopped until it is started.
-      attributes = { 'status' => 'ready', 'message' => 'Workspace ready', 'completed_at' => now, 'total_seconds' => total }
+      attributes = { 'status' => 'ready', 'message' => 'Workspace ready', 'completed_at' => now, 'total_seconds' => total,
+                     'sleep_state' => nil }
       attributes['port'] = port if port
+      attributes['prepared_digest'] = Recipe.new.preparation_digest if plan.nil? && !restart
       update(id, attributes)
       record_run(id, 'complete', total)
     end
@@ -254,7 +389,7 @@ module Workspaces
       total = started && elapsed_since(started)
       update(id, 'status' => 'error', 'message' => 'Workspace preparation failed', 'last_error' => detail,
                  'failed_phase' => @state.get(id)&.fetch('status', nil), 'completed_at' => now,
-                 'total_seconds' => total)
+                 'total_seconds' => total, 'sleep_state' => nil)
       record_run(id, 'failed', total)
     end
 

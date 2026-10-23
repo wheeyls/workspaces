@@ -114,6 +114,58 @@ usually takes, count the running step by how much of its usual time has passed, 
 times its usual time is flagged as taking longer than usual. With no history yet, steps weigh
 the same and no time estimate is shown. Delete the file to start the estimates over.
 
+## Sleeping idle workspaces
+
+A ready workspace that sees no preview traffic for a while is put to sleep: its server (the
+managed process group, and nothing shared such as PostgreSQL or Redis) is stopped, and the
+front door keeps answering on the same preview URL. The worktree, database, dependencies, built
+assets, environment settings and build history are untouched. The first request to a sleeping
+preview wakes it, waits for readiness and then forwards that request.
+
+```sh
+WORKSPACES_SLEEP_AFTER_MINUTES=30   # default; 15 also works; 0 switches sleeping off
+WORKSPACES_WAKE_TIMEOUT_SECONDS=90  # how long the first request waits for a wake
+WORKSPACES_SLEEP_SWEEP_SECONDS=30   # how often idle workspaces are looked for
+bundle exec workspaces keep-awake <workspace-id>          # never sleep this workspace
+bundle exec workspaces keep-awake <workspace-id> --off    # allow sleep again
+```
+
+The dashboard shows when a workspace sleeps, says "asleep" with a **Wake workspace** button, and has
+**Keep awake** / **Allow sleep** under Workspace controls. The setting is stored with the workspace.
+
+What counts as activity:
+
+- Preview requests do. Dashboard and status polling never reach the preview and do not count.
+- `/health` and `/up` never count and never wake a workspace. List more background polling under
+  `sleep.ignore_paths` (globs on the request path) in `.workspaces.yml`:
+
+  ```yaml
+  sleep:
+    ignore_paths:
+      - /api/heartbeat
+  ```
+
+- A request in flight holds the workspace awake until its response body is finished. Streamed
+  responses hold it until the body is closed. Streaming and upgraded connections are not newly
+  supported by the proxy; this only means the ones it already serves are never cut off.
+- Work the proxy cannot see (background jobs, scheduled tasks) is not activity. A workspace that
+  runs such work needs `keep-awake`, or `WORKSPACES_SLEEP_AFTER_MINUTES=0`.
+
+How waking behaves:
+
+- Only an intentionally sleeping workspace wakes. A workspace stopped by hand, failed, or still
+  preparing is never started by traffic; a GET still lands on the dashboard as before.
+- Simultaneous first requests share one wake and start one server. A request is sent upstream
+  once, never replayed, and keeps its method and body.
+- A wake runs only the server and readiness steps. If a step before the server changed in
+  `.workspaces.yml` since the workspace was prepared, it runs the full preparation instead.
+- A wake that fails or runs past the timeout answers `503` with `Retry-After`, a link to the
+  dashboard, and the failure in the workspace's status and logs. It is not retried in a loop.
+- Sleeping and waking use the same per-workspace lock as start, stop, restart and rebuild, so
+  they cannot overlap. After a front-door restart a sleeping workspace stays asleep, a sleep cut
+  short is finished, and a wake cut short shows as interrupted.
+- Idle clocks live in the front door's memory, so a restart gives every workspace a fresh idle period.
+
 ## Serve the dashboard and previews
 
 Run `serve` in a separate terminal using the **same project root and `WORKSPACES_HOME`**

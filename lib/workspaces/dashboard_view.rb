@@ -215,6 +215,16 @@ module Workspaces
       [progress_step_text, progress['eta_text']].compact.join('. ')
     end
 
+    def sleep_note
+      sleep = @presentation['sleep']
+      return '' unless sleep
+      return 'Kept awake: this workspace will not sleep when idle.' if sleep['keep_awake']
+      return '' unless @presentation['state'] == 'ready'
+
+      minutes = (sleep['after_seconds'] / 60.0).round
+      "Sleeps after #{minutes >= 1 ? "#{minutes} min" : "#{sleep['after_seconds'].round} s"} without preview traffic."
+    end
+
     def preset_badge_text
       name = @presentation['current_preset']
       name ? "Preset: #{name}" : ''

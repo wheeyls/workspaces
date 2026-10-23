@@ -19,6 +19,7 @@
       <a id="preview" class="button button--primary button--large" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
       <div id="lead-action" class="lead__action"><%= lead_action_form(@presentation['lead_action']) %></div>
     </div>
+    <p id="sleep-note" class="muted" <%= 'hidden' if sleep_note.empty? %>><%= escape(sleep_note) %></p>
     <p id="message" class="muted" hidden><%= field('message') %></p>
     <section class="error-panel setup-error" id="error-panel" role="alert" <%= 'hidden' unless @presentation['error'] %>>
       <h3>What went wrong</h3><pre id="error"><%= escape(@presentation['error']) %></pre>

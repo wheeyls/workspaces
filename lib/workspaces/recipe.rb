@@ -1,4 +1,6 @@
 require 'yaml'
+require 'json'
+require 'digest'
 require_relative 'config'
 require_relative 'environment_overrides'
 
@@ -9,7 +11,7 @@ module Workspaces
                       WORKSPACE_HOST WORKSPACE_CACHE_DIR WORKSPACE_RUN_ID).freeze
     LFS_STEP_ID = 'lfs'.freeze
     LFS_STEP_NAME = 'Fetch Git LFS files'.freeze
-    attr_reader :steps, :environment, :default_editable_env, :environment_presets, :lfs_fetch
+    attr_reader :steps, :environment, :default_editable_env, :environment_presets, :lfs_fetch, :sleep_ignore_paths
 
     def initialize(root: Config.repo_root)
       @root = root
@@ -19,6 +21,7 @@ module Workspaces
       @environment_presets = validate_environment_presets!(document.fetch('environment_presets', {}))
       @environment = validate_env!(document.fetch('env', {}))
       @lfs_fetch = validate_lfs!(document.fetch('lfs', {}))
+      @sleep_ignore_paths = validate_sleep!(document.fetch('sleep', {}))
       @steps = document.fetch('steps').map { |step| validate_step!(step) }
       @steps = [lfs_step] + @steps unless lfs_fetch.empty?
       validate_editable_overlap!
@@ -31,6 +34,14 @@ module Workspaces
 
     def for_operation(restart: false)
       restart ? steps.drop(steps.index { |step| step['background'] }) : steps
+    end
+
+    # Changes when a step that runs before the server changes. A sleeping workspace wakes by running
+    # only the server and readiness steps, unless this no longer matches what it was prepared with.
+    def preparation_digest
+      server = steps.index { |step| step['background'] }
+      material = { 'env' => environment, 'steps' => steps.first(server).map { |step| step.slice('id', 'run', 'env', 'timeout') } }
+      Digest::SHA256.hexdigest(JSON.generate(material))
     end
 
     # Files fetched into the workspace come from the LFS objects the source repository already
@@ -61,7 +72,7 @@ module Workspaces
         raise Invalid,
               'Configuration must be a mapping with version: 1'
       end
-      unknown_keys!(document, %w(version env default_editable_env environment_presets lfs steps))
+      unknown_keys!(document, %w(version env default_editable_env environment_presets lfs sleep steps))
       raise Invalid, 'steps must be a nonempty array' unless document['steps'].is_a?(Array) && !document['steps'].empty?
     end
 
@@ -127,6 +138,23 @@ module Workspaces
         end
         raise Invalid, 'lfs.fetch paths cannot contain commas or control characters' if path.match?(/[,[:cntrl:]]/)
         raise Invalid, 'lfs.fetch paths must be relative to the repository' if path.start_with?('/', '-') || path.split('/').include?('..')
+      end
+      paths.uniq
+    end
+
+    # `sleep: { ignore_paths: [glob, ...] }` names preview paths that are background polling, so they
+    # do not keep an otherwise idle workspace awake. Globs match the request path (without the query).
+    def validate_sleep!(value)
+      raise Invalid, 'sleep must be a mapping' unless value.is_a?(Hash)
+
+      unknown_keys!(value, %w(ignore_paths))
+      paths = value.fetch('ignore_paths', [])
+      raise Invalid, 'sleep.ignore_paths must be an array of paths' unless paths.is_a?(Array)
+
+      paths.each do |path|
+        unless path.is_a?(String) && path.start_with?('/') && path == path.strip && !path.match?(/[[:cntrl:]]/)
+          raise Invalid, 'sleep.ignore_paths entries must be trimmed strings starting with /'
+        end
       end
       paths.uniq
     end
