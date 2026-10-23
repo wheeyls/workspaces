@@ -17,6 +17,35 @@ module Workspaces
     DEFAULT_SUBDOMAIN_PREFIX = 'ws-'
     DEFAULT_FRONT_DOOR_PORT = 4747
     BACKEND_PORT_RANGE = (30_000..30_999)
+    DEFAULT_SLEEP_AFTER_MINUTES = 30
+    DEFAULT_WAKE_TIMEOUT_SECONDS = 90
+    DEFAULT_SLEEP_SWEEP_SECONDS = 30
+
+    # Seconds a ready workspace may go without preview traffic before it is put to sleep, or nil when
+    # sleeping is switched off (WORKSPACES_SLEEP_AFTER_MINUTES=0). Fractions of a minute are allowed.
+    def self.sleep_after_seconds
+      minutes = positive_number('WORKSPACES_SLEEP_AFTER_MINUTES', DEFAULT_SLEEP_AFTER_MINUTES, allow_zero: true)
+      minutes.zero? ? nil : minutes * 60
+    end
+
+    # How long the first request to a sleeping preview waits for the server to be ready.
+    def self.wake_timeout_seconds
+      positive_number('WORKSPACES_WAKE_TIMEOUT_SECONDS', DEFAULT_WAKE_TIMEOUT_SECONDS)
+    end
+
+    def self.sleep_sweep_seconds
+      positive_number('WORKSPACES_SLEEP_SWEEP_SECONDS', DEFAULT_SLEEP_SWEEP_SECONDS)
+    end
+
+    def self.positive_number(name, default, allow_zero: false)
+      value = Float(ENV.fetch(name, default.to_s))
+      return value if value.finite? && (value.positive? || (allow_zero && value.zero?))
+
+      raise ArgumentError, "#{name} must be a#{allow_zero ? ' non-negative' : ' positive'} number"
+    rescue ArgumentError, TypeError
+      raise ArgumentError, "#{name} must be a#{allow_zero ? ' non-negative' : ' positive'} number"
+    end
+    private_class_method :positive_number
 
     def self.front_door_port
       Integer(ENV.fetch('WORKSPACES_PORT', DEFAULT_FRONT_DOOR_PORT))

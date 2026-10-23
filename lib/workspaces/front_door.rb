@@ -6,20 +6,31 @@ require_relative 'coordinator'
 require_relative 'dashboard_view'
 require_relative 'environment_overrides'
 require_relative 'proxy_middleware'
+require_relative 'activity_tracker'
+require_relative 'sleep_policy'
 
 module Workspaces
   class FrontDoor
     WORKSPACE_ROUTE = %r{\A/workspaces/([a-z0-9]+(?:-[a-z0-9]+)*)
-                          (?:/(status|start|prepare|restart|resume|stop|remove|update-pr|environment))?\z}x
+                          (?:/(status|start|prepare|restart|resume|stop|remove|update-pr|environment|keep-awake|allow-sleep))?\z}x
 
     # Rack env keys set on requests that reach a ready workspace backend, for use by
     # middleware registered with Workspaces.configure_proxy.
     WORKSPACE_ID_ENV = 'workspaces.workspace_id'.freeze
     WORKSPACE_ENV = 'workspaces.workspace'.freeze
 
-    def initialize(coordinator: Coordinator.new, registry: Registry.new)
+    WAKE_POLL_SECONDS = 0.25
+    RETRY_AFTER_SECONDS = 5
+    private_constant :WAKE_POLL_SECONDS, :RETRY_AFTER_SECONDS
+
+    attr_reader :tracker
+
+    def initialize(coordinator: Coordinator.new, registry: Registry.new, tracker: ActivityTracker.new,
+                   sleep_policy: SleepPolicy.new)
       @coordinator = coordinator
       @registry = registry
+      @tracker = tracker
+      @sleep_policy = sleep_policy
       @forwarder = ProxyMiddleware.build(method(:forward_to_backend))
     end
 
@@ -126,7 +137,9 @@ module Workspaces
       when 'prepare' then @coordinator.start(id, force: true)
       when 'restart' then @coordinator.restart(id)
       when 'resume' then resume(id, request)
-      when 'stop' then stop(id)
+      when 'stop' then @coordinator.stop(id)
+      when 'keep-awake' then @coordinator.keep_awake(id, true)
+      when 'allow-sleep' then @coordinator.keep_awake(id, false)
       end
     end
 
@@ -147,13 +160,6 @@ module Workspaces
       response(422, e.message)
     end
 
-    def stop(id)
-      @registry.with_lock(id) do
-        Backend.new(id).stop!
-        StateStore.new(Config.state_file).set(id, 'status' => 'stopped', 'message' => 'Server stopped')
-      end
-    end
-
     def remove(request, id)
       unless request.media_type == 'application/x-www-form-urlencoded'
         return response(415, 'Deletion requires a form-encoded confirmation')
@@ -162,6 +168,7 @@ module Workspaces
       return response(422, 'Type the exact workspace ID to confirm deletion') unless request.POST['confirm_id'] == id
 
       @registry.remove(id, force: true)
+      @tracker.forget(id)
       redirect("#{Config.public_origin}/workspaces")
     rescue ArgumentError, Worktree::CommandFailedError, SystemCallError
       response(409, 'Workspace was not removed. Check the server logs and retry when safe.')
@@ -246,14 +253,106 @@ module Workspaces
     def proxy(id, request)
       return response(404, 'Unknown managed workspace') unless Worktree.new(id).exists?
 
+      counted = !@sleep_policy.ignored?(request.path_info)
+      lease = acquire_lease(id, counted)
+      return waking_unavailable(id) unless lease
+
+      begin
+        result = serve(id, request, counted)
+      rescue StandardError, Timeout::Error
+        lease.release
+        raise
+      end
+      hold_lease(result, lease)
+    rescue IOError, SystemCallError, Timeout::Error => e
+      response(502, "Workspace backend unavailable: #{e.class}")
+    end
+
+    def serve(id, request, counted)
+      phase = @coordinator.sleep_phase(id)
+      if phase
+        return sleeping_unavailable(id) unless counted
+
+        outcome = await_wake(id, phase)
+        return wake_failed(id) if outcome == :failed
+        return waking_unavailable(id) unless outcome == :ready
+      end
+
       snapshot = @coordinator.snapshot(id, include_log: false)
       return unavailable(id, request) unless snapshot['status'] == 'ready' && !snapshot['active']
 
       request.env[WORKSPACE_ID_ENV] = id
       request.env[WORKSPACE_ENV] = snapshot
       @forwarder.call(request.env)
-    rescue IOError, SystemCallError, Timeout::Error => e
-      response(502, "Workspace backend unavailable: #{e.class}")
+    end
+
+    # A lease keeps the workspace awake for as long as its request is being served. A response body
+    # that is still being produced (anything but a buffered Array) keeps it until the server closes it.
+    def hold_lease(result, lease)
+      status, headers, body = result
+      if body.is_a?(Array)
+        lease.release
+        return result
+      end
+
+      [status, headers, Rack::BodyProxy.new(body) { lease.release }]
+    end
+
+    # Requests are refused only while the workspace is being put to sleep, which takes a moment;
+    # they then wait their turn and wake it.
+    def acquire_lease(id, counted)
+      deadline = monotonic + Config.wake_timeout_seconds
+      loop do
+        lease = @tracker.acquire(id, counted: counted)
+        return lease if lease
+        return nil if monotonic >= deadline
+
+        sleep WAKE_POLL_SECONDS / 5
+      end
+    end
+
+    # Starts the wake (one request wins the workspace lock; the rest see it already running) and
+    # waits, within the wake timeout, for the server to be ready. :ready, :failed or :timeout.
+    def await_wake(id, phase)
+      @coordinator.wake(id) if phase == :sleeping
+      deadline = monotonic + Config.wake_timeout_seconds
+      loop do
+        outcome = wake_outcome(id)
+        return outcome if outcome
+        return :timeout if monotonic >= deadline
+
+        sleep WAKE_POLL_SECONDS
+      end
+    end
+
+    def wake_outcome(id)
+      return nil if @coordinator.sleep_phase(id)
+
+      case @coordinator.status_of(id)
+      when 'ready' then :ready
+      when 'preparing' then nil
+      else :failed
+      end
+    end
+
+    def monotonic
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def waking_unavailable(id)
+      retryable(503, "Workspace is waking up and not ready yet. Try again in a few seconds. Status: #{Config.dashboard_url(id)}")
+    end
+
+    def sleeping_unavailable(id)
+      retryable(503, "Workspace is asleep. Open it to wake it. Status: #{Config.dashboard_url(id)}")
+    end
+
+    def wake_failed(id)
+      retryable(503, "Workspace could not wake up. Details: #{Config.dashboard_url(id)}")
+    end
+
+    def retryable(status, message)
+      [status, headers('text/plain').merge('retry-after' => RETRY_AFTER_SECONDS.to_s), [message]]
     end
 
     def unavailable(id, request)

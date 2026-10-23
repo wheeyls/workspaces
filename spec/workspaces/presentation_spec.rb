@@ -206,4 +206,43 @@ RSpec.describe Workspaces::Presentation do
     expect(view['state']).to eq('unknown')
     expect(visible(view)).to eq(%w(lead technical log details))
   end
+
+  describe 'sleeping' do
+    let(:steps) { [{ 'key' => 'app', 'label' => 'Server', 'state' => 'complete' }] }
+
+    it 'explains that an asleep workspace keeps its work and offers to wake it' do
+      view = present('status' => 'sleeping', 'sleep_after_seconds' => 1800, 'steps' => steps)
+
+      expect(view['state']).to eq('sleeping')
+      expect(view['headline']).to eq('Your workspace is asleep')
+      expect(view['summary']).to include('files and data are kept', 'wakes')
+      expect(view['lead_action']).to eq('kind' => 'post', 'key' => 'start', 'label' => 'Wake workspace')
+      expect(view['actions'].map { |a| a['key'] }).to eq(%w(start keep-awake))
+      expect(view['ready']).to be(false)
+      expect(view['sleep']).to eq('keep_awake' => false, 'after_seconds' => 1800)
+    end
+
+    it 'offers keep-awake on a ready workspace and allow-sleep once it is on' do
+      ready = present('status' => 'ready', 'sleep_after_seconds' => 900, 'steps' => steps)
+      kept = present('status' => 'ready', 'sleep_after_seconds' => 900, 'keep_awake' => true, 'steps' => steps)
+
+      expect(ready['actions'].map { |a| a['key'] }).to eq(%w(prepare restart stop keep-awake))
+      expect(kept['actions'].map { |a| a['key'] }).to eq(%w(prepare restart stop allow-sleep))
+      expect(kept['sleep']).to eq('keep_awake' => true, 'after_seconds' => 900)
+    end
+
+    it 'says nothing about sleeping when sleeping is switched off' do
+      view = present('status' => 'ready', 'sleep_after_seconds' => nil, 'steps' => steps)
+
+      expect(view['sleep']).to be_nil
+      expect(view['actions'].map { |a| a['key'] }).to eq(%w(prepare restart stop))
+    end
+
+    it 'shows a waking workspace as busy, like any start' do
+      view = present('status' => 'preparing', 'active' => true, 'steps' => steps)
+
+      expect(view['state']).to eq('busy')
+      expect(view['sleep']).to be_nil
+    end
+  end
 end

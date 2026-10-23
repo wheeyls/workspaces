@@ -386,4 +386,25 @@ RSpec.describe Workspaces::Cli do
     generate_tls_pair(cert_path: cert_path, key_path: key_path)
     [cert_path, key_path]
   end
+
+  describe 'keep-awake' do
+    let(:coordinator) { instance_double(Workspaces::Coordinator, snapshot: { 'id' => 'ws-1' }) }
+    let(:cli) { described_class.new.tap { |instance| allow(instance).to receive(:coordinator).and_return(coordinator) } }
+
+    before { allow(coordinator).to receive(:keep_awake) }
+
+    it 'exempts a workspace from sleeping, and --off lets it sleep again' do
+      capture_streams { expect(cli.run(['keep-awake', 'ws-1', '--json'])).to eq(0) }
+      expect(coordinator).to have_received(:keep_awake).with('ws-1', true)
+
+      capture_streams { expect(cli.run(['keep-awake', 'ws-1', '--off', '--json'])).to eq(0) }
+      expect(coordinator).to have_received(:keep_awake).with('ws-1', false)
+    end
+
+    it 'needs a workspace ID' do
+      _, err = capture_streams { expect(cli.run(['keep-awake'])).to eq(1) }
+
+      expect(err).to include('needs a workspace ID')
+    end
+  end
 end

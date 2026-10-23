@@ -266,6 +266,10 @@ h1 {
   background: var(--success);
 }
 
+.status-pill[data-status='sleeping'] .status-dot {
+  background: var(--muted);
+}
+
 .status-pill[data-status='error'] .status-dot,
 .status-pill[data-status='interrupted'] .status-dot,
 .status-pill[data-status='stopped'] .status-dot {

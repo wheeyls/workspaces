@@ -498,4 +498,33 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('Your workspace is paused')
     expect(html).to match(%r{id="lead-action"[^>]*><form method="post" action="/workspaces/agent-123/start"><button class="button button--primary button--large">Start workspace})
   end
+
+  describe 'sleeping' do
+    let(:base) { snapshot.merge('status' => 'ready', 'sleep_after_seconds' => 1800, 'steps' => []) }
+
+    it 'tells a ready workspace when it will sleep, with a keep-awake control' do
+      html = described_class.render(base)
+
+      expect(html).to include('Sleeps after 30 min without preview traffic.', '/workspaces/agent-123/keep-awake')
+    end
+
+    it 'shows a kept-awake workspace with a control to let it sleep again' do
+      html = described_class.render(base.merge('keep_awake' => true))
+
+      expect(html).to include('Kept awake: this workspace will not sleep when idle.', '/workspaces/agent-123/allow-sleep')
+    end
+
+    it 'leads a sleeping workspace with a wake button and no open-preview button' do
+      html = described_class.render(base.merge('status' => 'sleeping'))
+
+      expect(html).to include('Your workspace is asleep', '>Wake workspace</button>')
+      expect(html).to match(/id="preview"[^>]*\shidden/)
+    end
+
+    it 'shows no sleep note when sleeping is switched off' do
+      html = described_class.render(base.merge('sleep_after_seconds' => nil))
+
+      expect(html).to match(/id="sleep-note"[^>]*\shidden/)
+    end
+  end
 end
