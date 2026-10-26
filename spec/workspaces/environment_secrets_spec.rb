@@ -217,6 +217,18 @@ RSpec.describe 'environment secrets' do
       expect(post('env' => { '0' => { 'name' => ['A'], 'value' => '1' } }).first).to eq(422)
     end
 
+    it 'still accepts the older single-textarea post, leaving stored secrets alone and refusing secret-like names' do
+      store.replace_rows([row('A_KEY', secret, secret: true)], defaults: {})
+
+      expect(post('editable_env' => "FOO=bar\n").first).to eq(303)
+      coordinator.wait(workspace.id)
+      expect(store.load).to include('FOO' => 'bar', 'A_KEY' => secret)
+
+      status, _, body = post('editable_env' => "MY_TOKEN=x\n")
+      expect(status).to eq(422)
+      expect(body.join).to include('Secret-like')
+    end
+
     it 'does not leak a secret through the status endpoint' do
       store.replace_rows([row('A_KEY', secret, secret: true)], defaults: {})
       env = Rack::MockRequest.env_for("http://localhost:4747/workspaces/#{workspace.id}/status")
