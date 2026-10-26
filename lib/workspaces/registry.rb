@@ -48,6 +48,7 @@ module Workspaces
         Backend.new(id).stop!
         workspace.remove!(force: force)
         StateStore.new(Config.state_file).delete(id)
+        EnvironmentOverrides.new(id).clear!
       end
     end
 

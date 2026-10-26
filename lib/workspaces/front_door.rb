@@ -148,7 +148,9 @@ module Workspaces
       return response(403, 'Actions require the configured dashboard origin') unless same_origin?(request)
 
       params = environment_params(request)
-      updated = if params.key?('editable_env')
+      updated = if params.key?('env')
+                  @coordinator.replace_environment_rows(id, rows: parse_environment_rows(params))
+                elsif params.key?('editable_env')
                   @coordinator.replace_editable_environment(id, text: parse_editable_environment(params))
                 else
                   @coordinator.update_environment(id, **parse_environment_changes(params))
@@ -157,6 +159,8 @@ module Workspaces
 
       redirect(Config.dashboard_url(id))
     rescue EnvironmentOverrides::Invalid => e
+      response(422, e.message)
+    rescue Vault::Error => e
       response(422, e.message)
     end
 
@@ -202,6 +206,24 @@ module Workspaces
 
     def parse_environment_changes(params)
       { set: normalize_set(params['set']), remove: normalize_remove(params['remove']) }
+    end
+
+    # The form posts env[0][name], env[0][value] and env[0][secret] for each row. Rows are taken in
+    # the order of their numbers; anything that is not a mapping of strings is refused.
+    def parse_environment_rows(params)
+      rows = params['env']
+      raise EnvironmentOverrides::Invalid, 'Environment rows must be a numbered list' unless rows.is_a?(Hash)
+      unless rows.keys.all? { |key| key.to_s.match?(/\A\d{1,4}\z/) }
+        raise EnvironmentOverrides::Invalid, 'Environment rows must be a numbered list'
+      end
+
+      rows.sort_by { |key, _| key.to_i }.map do |_, row|
+        unless row.is_a?(Hash) && row.values.all?(String)
+          raise EnvironmentOverrides::Invalid, 'Each environment row needs a name and a value'
+        end
+
+        row.slice('name', 'value', 'secret')
+      end
     end
 
     def parse_editable_environment(params)
