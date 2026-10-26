@@ -3,13 +3,14 @@ require_relative 'spec_helper'
 RSpec.describe Workspaces::DashboardView, '.render' do
   before { repository }
 
-  it 'renders a labelled multiline editor and disables saving while busy' do
+  it 'renders labelled variable rows and disables saving while busy' do
     snapshot = { 'workspace_id' => 'fixture', 'status' => 'preparing', 'active' => true,
                  'editable_environment' => { 'APP_VARIANT' => 'www', 'APP_CHANNEL' => 'www' },
                  'environment_presets' => { 'Default' => { 'UE_APP' => 'www' } } }
     html = described_class.render(snapshot)
 
-    expect(html).to include('<textarea id="editable-env" name="editable_env"')
+    expect(html).to include('<div class="env-rows" id="env-rows" role="group" aria-labelledby="env-rows-label"')
+    expect(html).not_to include('<textarea')
     expect(html).to include('data-preset-controls hidden')
     expect(html).to include('role="group" aria-labelledby="environment-preset-label"')
     expect(html).to include('class="button button--subtle env-preset-button" data-environment-preset="Default" aria-pressed="false"')
@@ -17,13 +18,14 @@ RSpec.describe Workspaces::DashboardView, '.render' do
     expect(html).to include('data-environment-presets')
     expect(html).to include('data-environment-fieldset disabled')
     expect(html).to include('data-env-submit disabled')
-    expect(html).to include('APP_CHANNEL=www', 'APP_VARIANT=www')
+    expect(html).to include('value="APP_CHANNEL"', 'value="APP_VARIANT"')
     expect(html).to include('toggleBusy,')
     expect(html).to include('if (fieldset) fieldset.disabled = activeBusy;')
     expect(html).to include('if (submit) submit.disabled = activeBusy;')
-    expect(html).to include('button.disabled = activeBusy;')
+    expect(html).to include('button.disabled = activeBusy || !hasPresets;')
     expect(html).to include('Workspace is busy. Environment updates are temporarily disabled.')
     expect(html).to include("'Preset loaded into draft only. Use ' + submitLabel() + ' to apply changes.'")
-    expect(html).not_to include('data-env-add-row', 'data-replace-toggle')
+    expect(html).to include('data-env-add-row hidden')
+    expect(html).not_to include('data-replace-toggle')
   end
 end

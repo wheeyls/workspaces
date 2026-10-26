@@ -115,14 +115,69 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).not_to include('Dependencies &amp; database', 'Build assets')
   end
 
-  it 'renders editable values as escaped line-based settings without exposing hidden overrides' do
+  it 'renders editable values as escaped name and value rows without exposing hidden overrides' do
     html = described_class.render(snapshot.merge('environment_keys' => %w(APP_VARIANT SECRET_TOKEN),
                                                   'editable_environment' => { 'APP_VARIANT' => '<admin>' }))
 
     expect(html).to include('Choose what to preview', '/workspaces/agent-123/environment')
-    expect(html).to include('name="editable_env"', 'APP_VARIANT=&lt;admin&gt;')
+    expect(html).to include('name="env[0][name]" value="APP_VARIANT"', 'name="env[0][value]" type="text" value="&lt;admin&gt;"')
+    expect(html).not_to include('<textarea', 'editable_env')
     expect(html).not_to include('id="environment-preset"')
-    expect(html).not_to include('SECRET_TOKEN=')
+    expect(html).not_to include('SECRET_TOKEN')
+  end
+
+  describe 'secrets' do
+    let(:with_secret) do
+      snapshot.merge('editable_environment' => { 'UE_APP' => 'www' }, 'secret_names' => %w(STRIPE_KEY),
+                     'vault' => { 'provider' => 'file', 'available' => true, 'problem' => nil })
+    end
+
+    def secret_row(html)
+      html[/<div class="env-row" data-env-row data-secret="true".*?<\/div>/m]
+    end
+
+    it 'lists a stored secret by name only, as an empty write-only password field' do
+      row = secret_row(described_class.render(with_secret))
+
+      expect(row).to include('value="STRIPE_KEY"', 'type="password"', 'value=""', 'data-stored="true"',
+                             'Stored. Enter a new value to replace it', 'autocomplete="new-password"')
+    end
+
+    it 'locks the checkbox of a stored secret and still posts it as a secret' do
+      row = secret_row(described_class.render(with_secret))
+
+      expect(row).to include('data-env-secret checked disabled')
+      expect(row).to include('<input type="hidden" name="env[1][secret]" value="1">')
+    end
+
+    it 'never puts any value of a secret in the page, even if a snapshot wrongly carried one' do
+      html = described_class.render(with_secret.merge('secret_values' => { 'STRIPE_KEY' => 'sk_live_abc123' },
+                                                      'environment_keys' => %w(STRIPE_KEY)))
+
+      expect(html).not_to include('sk_live_abc123')
+    end
+
+    it 'explains that secrets are write-only and, when the vault is unavailable, why' do
+      html = described_class.render(with_secret.merge(
+                                      'vault' => { 'available' => false, 'problem' => 'Secrets are turned off. Set WORKSPACES_MASTER_KEY.' }
+                                    ))
+
+      expect(html).to include('Secrets are write-only', 'Secrets are turned off. Set WORKSPACES_MASTER_KEY.')
+      expect(described_class.render(with_secret)).not_to include('id="env-vault-note"')
+    end
+
+    it 'carries a template for new rows, with an index placeholder the script fills in' do
+      html = described_class.render(with_secret)
+
+      expect(html).to include('<template id="env-row-template">', 'name="env[__INDEX__][name]"')
+      expect(html).to include('data-env-add-row hidden')
+    end
+
+    it 'escapes a hostile secret name' do
+      html = described_class.render(with_secret.merge('secret_names' => ['"><script>alert(1)</script>']))
+
+      expect(html).not_to include('<script>alert(1)</script>')
+    end
   end
 
   it 'renders escaped environment preset buttons and JSON data for client-side draft fill' do
@@ -139,18 +194,18 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('data-preset-controls hidden')
     expect(html).to include('data-environment-presets="')
     expect(html).to include('&quot;&lt;Admin&gt;&quot;')
-    expect(html).to include('ROUTING_SUBDOMAIN=admin')
-    expect(html).to include('UE_APP=admin')
+    expect(html).to include('{&quot;name&quot;:&quot;ROUTING_SUBDOMAIN&quot;,&quot;value&quot;:&quot;admin&quot;}')
+    expect(html).to include('{&quot;name&quot;:&quot;UE_APP&quot;,&quot;value&quot;:&quot;admin&quot;}')
     expect(html).to include('&quot;Vendor&quot;')
-    expect(html).to include('ROUTING_SUBDOMAIN=vendors')
-    expect(html).to include('UE_APP=vendor')
+    expect(html).to include('{&quot;name&quot;:&quot;ROUTING_SUBDOMAIN&quot;,&quot;value&quot;:&quot;vendors&quot;}')
+    expect(html).to include('{&quot;name&quot;:&quot;UE_APP&quot;,&quot;value&quot;:&quot;vendor&quot;}')
     expect(html).to include("'Preset loaded into draft only. Use ' + submitLabel() + ' to apply changes.'")
   end
 
   it 'supports snapshots without environment keys for older fixtures' do
     html = described_class.render(snapshot.merge('environment_keys' => nil))
 
-    expect(html).to include('name="editable_env"')
+    expect(html).to include('id="env-rows"', 'data-env-add-row')
     expect(html).to include('/workspaces/agent-123/environment')
   end
 
