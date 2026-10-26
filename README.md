@@ -242,6 +242,44 @@ temporarily stashed and restored (including staged state). On a restore conflict
 the stash is retained for manual recovery. Updating the checkout does not run
 setup or restart the already-running backend; use Rebuild & restart afterward.
 
+### Environment variables and secrets
+
+A workspace's settings are rows of **name** and **value**, with a **Secret**
+checkbox on each. Add and remove rows as needed; **Save & restart** applies them.
+
+A *secret* is an environment variable that is write-only. Its value goes to a
+vault, is handed to the workspace's setup steps and server as an ordinary
+environment variable, and is never shown again: not in the dashboard, the status
+API, the logs (any output that contains it is filtered) or error messages. A saved
+secret appears as its name with an empty, password-style field that says a value is
+stored. Leave that field blank to keep the stored value, type a new one to replace
+it, or remove the row to delete the secret. A stored secret cannot be turned back
+into a visible variable. Names that look like secrets (`*_TOKEN`, `*_SECRET`,
+`*_PASSWORD`, `*_API_KEY`, ...) cannot be saved as visible variables; tick **Secret**.
+Presets only ever change visible variables.
+
+Which vault is used is set where `serve` runs, with `WORKSPACES_VAULT` (default
+`file`). The built-in `file` vault keeps one AES-256-GCM encrypted file per workspace
+in `$WORKSPACES_HOME/vault/`, with a key derived per workspace from a master key you
+provide:
+
+```sh
+export WORKSPACES_MASTER_KEY="$(openssl rand -base64 32)"   # keep this; it cannot be recovered
+bin/workspaces serve --secure
+```
+
+Without `WORKSPACES_MASTER_KEY` the settings page says secrets are turned off, and
+everything else works as before. With the wrong key a run fails with a plain reason
+rather than starting without its secrets, and saving is refused so stored secrets are
+never overwritten. The master key is read only by the front door: it is removed from
+the environment of every step, server and `exec` command. Removing a workspace deletes
+its secrets.
+
+Another store can be added behind the same small interface (`available?`/`problem`,
+`read(scope)`, `write(scope, entries)`, `purge(scope)`): subclass
+`Workspaces::Vault::Provider` and call `Workspaces::Vault.register('name', YourClass)`
+from a file loaded with `serve --require`, then set `WORKSPACES_VAULT=name`.
+
 ### Editable environment presets
 
 Recipes can define editable environment defaults and named presets in
@@ -258,20 +296,20 @@ environment_presets:
     DEMO_MODE: "false"
 ```
 
-Each preset maps editable variable names to values. In the workspace editor,
-choosing a preset fills the draft and replaces its custom editor lines rather
-than merging with them. Selection does not save or restart the workspace; choose
-**Save & restart** to apply the draft. Presets are not applied automatically,
+Each preset maps editable variable names to values. In the workspace settings,
+choosing a preset replaces the visible variable rows rather than merging with
+them (secret rows are left alone). Selection does not save or restart the
+workspace; choose **Save & restart** to apply the draft. Presets are not applied automatically,
 and defining them requires no JavaScript edits. Preset keys must be declared in
 `default_editable_env`; recipes reject undeclared keys and secret-like values.
-Hidden environment values are never exposed in the editor or preset choices.
+Hidden environment values are never exposed in the settings or preset choices.
 
 Use `create --branch main --preset Demo` to save a preset for a new, still-idle
 workspace. `start ID --preset Demo` applies it before preparing a stopped
 workspace; `restart ID --preset 'Demo off'` switches a running workspace and
 restarts its server. `prepare ID --preset Demo` switches and rebuilds. An
 unknown name is rejected without changing saved settings. Selecting a preset
-replaces the editable settings (including custom editor lines) but preserves
+replaces the editable settings (including custom rows) but preserves
 hidden legacy overrides. A running workspace requires `restart --preset` or
 `prepare --preset`, not `start --preset`.
 
