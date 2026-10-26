@@ -2,6 +2,10 @@ module Workspaces
   module ChildEnv
     module_function
 
+    # Held by the front door alone. Anything a step, the server or `exec` starts must never see the
+    # key that opens the secret vault, however it was set.
+    WITHHELD = %w(WORKSPACES_MASTER_KEY).freeze
+
     def for_workspace(workspace_path:, extra_env: {}, parent_env: ENV.to_h)
       env = parent_env.to_h.transform_keys(&:to_s).dup
       if defined?(::Bundler)
@@ -10,7 +14,7 @@ module Workspaces
           clean.key?(name) ? env[name] = clean[name] : env.delete(name)
         end
       end
-      env.delete_if { |key, _| bundler_key?(key) }
+      env.delete_if { |key, _| bundler_key?(key) || WITHHELD.include?(key) }
 
       gemfile = File.join(workspace_path.to_s, 'Gemfile')
       env['BUNDLE_GEMFILE'] = gemfile
@@ -18,7 +22,7 @@ module Workspaces
 
       extra_env.to_h.each do |name, value|
         key = name.to_s
-        next if bundler_key?(key)
+        next if bundler_key?(key) || WITHHELD.include?(key)
 
         if value.nil?
           env.delete(key)
