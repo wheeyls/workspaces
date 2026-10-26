@@ -133,14 +133,35 @@ RSpec.describe Workspaces::DashboardView do
     end
 
     def secret_row(html)
-      html[/<div class="env-row" data-env-row data-secret="true".*?<\/div>/m]
+      html[/<div class="env-row" data-env-row data-secret="true".*?<button type="button" class="button button--subtle button--small" data-env-remove-row.*?<\/div>/m]
     end
 
-    it 'lists a stored secret by name only, as an empty write-only password field' do
+    it 'lists a stored secret by name only, with no value input at all until Replace is used' do
       row = secret_row(described_class.render(with_secret))
 
-      expect(row).to include('value="STRIPE_KEY"', 'type="password"', 'value=""', 'data-stored="true"',
-                             'Stored. Enter a new value to replace it', 'autocomplete="new-password"')
+      expect(row).to include('value="STRIPE_KEY"', 'data-stored="true"', 'Stored. Write-only.', 'data-env-replace hidden')
+      expect(row.sub(/<noscript>.*<\/noscript>/m, '')).not_to include('data-env-value', 'type="password"')
+    end
+
+    it 'keeps a way to replace a secret without script, inside noscript' do
+      row = secret_row(described_class.render(with_secret))
+
+      expect(row[/<noscript>.*<\/noscript>/m]).to include('name="env[1][value]"', 'type="password"', 'value=""')
+    end
+
+    it 'asks password managers to leave every row input alone' do
+      html = described_class.render(with_secret.merge('editable_environment' => { 'UE_APP' => 'www' }))
+      inputs = html.scan(/<input class="env-row__(?:name|value)"[^>]*>/)
+
+      expect(inputs.length).to be >= 4
+      inputs.each do |input|
+        expect(input).to include('autocomplete="off"', 'data-1p-ignore', 'data-lpignore="true"', 'data-bwignore')
+        expect(input).not_to include('new-password')
+      end
+    end
+
+    it 'does not ask the browser to generate a password for a new secret row' do
+      expect(described_class.render(with_secret)).not_to include('new-password')
     end
 
     it 'locks the checkbox of a stored secret and still posts it as a secret' do

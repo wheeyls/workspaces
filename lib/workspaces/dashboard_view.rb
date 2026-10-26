@@ -159,20 +159,44 @@ module Workspaces
     # never pre-filled, with a placeholder saying a value is stored. The secret checkbox is the only
     # thing that decides which store a row goes to, and it is disabled for a stored secret so a
     # saved secret cannot be quietly turned into a visible variable.
+    # Keeps password managers from offering to fill, save or generate anything for these inputs. No
+    # single attribute does it: `autocomplete="off"` is ignored on password fields, so each manager's
+    # own opt-out goes alongside it (1Password, LastPass, Bitwarden).
+    NO_AUTOFILL = 'autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore'
+
+    # One row of the settings form.
+    #
+    # A stored secret has no value input at all: just its name, a note, and a Replace button that
+    # adds the input when it is clicked. So the page holds no password field for a password manager
+    # to find until someone asks to replace one. (Without script, the input sits inside <noscript> so
+    # a secret can still be replaced.) A row posted with no value keeps what is stored.
+    #
+    # The secret checkbox is disabled for a stored secret, with a hidden field carrying it, so a
+    # saved secret cannot be quietly turned into a visible variable.
     def env_row_html(index, row)
       secret = row['secret']
       stored = secret && !row['name'].to_s.empty?
-      placeholder = stored ? 'Stored. Enter a new value to replace it' : (secret ? 'Value' : 'value')
-      name_attr = "env[#{index}][name]"
       <<~HTML.delete("\n")
         <div class="env-row" data-env-row#{secret ? ' data-secret="true"' : ''}#{stored ? ' data-stored="true"' : ''}>
-        <input class="env-row__name" name="#{name_attr}" value="#{escape(row['name'])}" placeholder="NAME" aria-label="Variable name" spellcheck="false" autocomplete="off" autocapitalize="off">
-        <input class="env-row__value" name="env[#{index}][value]" type="#{secret ? 'password' : 'text'}" value="#{secret ? '' : escape(row['value'])}" placeholder="#{escape(placeholder)}" aria-label="Value" spellcheck="false" autocomplete="#{secret ? 'new-password' : 'off'}" autocapitalize="off" data-env-value>
+        <input class="env-row__name" name="env[#{index}][name]" value="#{escape(row['name'])}" placeholder="NAME" aria-label="Variable name" spellcheck="false" #{NO_AUTOFILL} autocapitalize="off">
+        #{stored ? stored_value_html(index) : value_input_html(index, row)}
         <label class="env-row__secret"><input type="checkbox" name="env[#{index}][secret]" value="1" data-env-secret#{secret ? ' checked' : ''}#{stored ? ' disabled' : ''}> Secret</label>
         #{stored ? "<input type=\"hidden\" name=\"env[#{index}][secret]\" value=\"1\">" : ''}
         <button type="button" class="button button--subtle button--small" data-env-remove-row aria-label="Remove variable" hidden>Remove</button>
         </div>
       HTML
+    end
+
+    def value_input_html(index, row, placeholder: nil)
+      secret = row['secret']
+      placeholder ||= secret ? 'Value' : 'value'
+      %(<input class="env-row__value" name="env[#{index}][value]" type="#{secret ? 'password' : 'text'}" value="#{secret ? '' : escape(row['value'])}" placeholder="#{escape(placeholder)}" aria-label="Value" spellcheck="false" #{NO_AUTOFILL} autocapitalize="off" data-env-value>)
+    end
+
+    def stored_value_html(index)
+      '<span class="env-row__stored" data-env-stored><span class="muted">Stored. Write-only.</span> ' \
+        '<button type="button" class="button button--subtle button--small" data-env-replace hidden>Replace</button></span>' \
+        "<noscript>#{value_input_html(index, { 'secret' => true }, placeholder: 'New value (leave blank to keep)')}</noscript>"
     end
 
     def environment_presets_raw

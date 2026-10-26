@@ -25,6 +25,12 @@ RSpec.describe 'dashboard environment rows' do
         if (match) this.append(makeRow(match[1], { name: '', value: '' }));
       }
       append(...nodes) { nodes.flat().forEach((n) => { n.parentNode = this; this.children.push(n); }); }
+      insertBefore(node, ref) {
+        node.parentNode = this;
+        const at = ref ? this.children.indexOf(ref) : -1;
+        if (at < 0) this.children.push(node); else this.children.splice(at, 0, node);
+        return node;
+      }
       removeChild(n) { this.children = this.children.filter((c) => c !== n); n.parentNode = null; }
       setAttribute(k, v) { this.attributes[k] = v; }
       removeAttribute(k) { delete this.attributes[k]; }
@@ -53,12 +59,19 @@ RSpec.describe 'dashboard environment rows' do
       if (opts.secret) row.setAttribute('data-secret', 'true');
       if (opts.stored) row.setAttribute('data-stored', 'true');
       const name = new Node('input', { className: 'env-row__name', name: 'env[' + index + '][name]', value: entry.name });
-      const value = new Node('input', { attributes: { 'data-env-value': '' }, name: 'env[' + index + '][value]',
-        type: opts.secret ? 'password' : 'text', value: entry.value });
       const secret = new Node('input', { attributes: { 'data-env-secret': '' }, type: 'checkbox', checked: !!opts.secret });
       secret.disabled = !!opts.stored;
       const remove = new Node('button', { attributes: { 'data-env-remove-row': '' }, hidden: true });
-      row.append(name, value, secret, remove);
+      if (opts.stored) {
+        // A stored secret: no value input, a note, and a Replace button (as the server renders it).
+        const stored = new Node('span', { attributes: { 'data-env-stored': '' } });
+        stored.append(new Node('button', { attributes: { 'data-env-replace': '' }, hidden: true }));
+        row.append(name, stored, secret, remove);
+      } else {
+        const value = new Node('input', { attributes: { 'data-env-value': '' }, name: 'env[' + index + '][value]',
+          type: opts.secret ? 'password' : 'text', value: entry.value });
+        row.append(name, value, secret, remove);
+      }
       return row;
     }
 
@@ -101,13 +114,15 @@ RSpec.describe 'dashboard environment rows' do
       return context.window.WorkspaceEnvironment;
     }
 
-    const rowState = (rows) => rows.children.map((r) => ({
-      name: r.querySelector('.env-row__name').value, value: r.querySelector('[data-env-value]').value,
-      type: r.querySelector('[data-env-value]').type, secret: r.querySelector('[data-env-secret]').checked,
-      locked: r.querySelector('[data-env-secret]').disabled, placeholder: r.querySelector('[data-env-value]').placeholder,
+    const rowState = (rows) => rows.children.map((r) => {
+      const v = r.querySelector('[data-env-value]') || { value: '', type: null, placeholder: null };
+      return {
+      name: r.querySelector('.env-row__name').value, value: v.value, hasValueInput: !!r.querySelector('[data-env-value]'),
+      type: v.type, secret: r.querySelector('[data-env-secret]').checked,
+      locked: r.querySelector('[data-env-secret]').disabled, placeholder: v.placeholder,
       field: r.querySelector('.env-row__name').name, dataSecret: r.hasAttribute('data-secret'),
       removeHidden: r.querySelector('[data-env-remove-row]').hidden
-    }));
+    }; });
     const click = (n) => n.dispatchEvent({ type: 'click' });
     const type = (n, v) => { n.value = v; n.dispatchEvent({ type: 'input', target: n }); };
     const tick = (n, v) => { n.checked = v; n.dispatchEvent({ type: 'change', target: n }); };
@@ -159,15 +174,86 @@ RSpec.describe 'dashboard environment rows' do
     expect(result['off']).to include('type' => 'text', 'dataSecret' => false, 'placeholder' => 'value')
   end
 
-  it 'shows a stored secret as an empty locked password field with a stored placeholder' do
+  let(:rows) do
+    [{ 'name' => 'UE_APP', 'value' => 'www' }, { 'name' => 'STRIPE_KEY', 'value' => '', 'secret' => true, 'stored' => true }]
+  end
+
+  it 'shows a stored secret with no value input, locked as a secret' do
     result = run({ 'rows' => rows }, 'out.row = rowState(dom.rows)[1];')
 
-    expect(result['row']).to include('name' => 'STRIPE_KEY', 'value' => '', 'type' => 'password', 'locked' => true,
-                                     'placeholder' => 'Stored. Enter a new value to replace it')
+    expect(result['row']).to include('name' => 'STRIPE_KEY', 'hasValueInput' => false, 'locked' => true, 'secret' => true)
+  end
+
+  describe 'Replace' do
+    it 'is revealed by script, and adds an empty password input that is hidden from password managers' do
+      result = run({ 'rows' => rows }, <<~JS)
+        const row = dom.rows.children[1];
+        out.replaceHidden = row.querySelector('[data-env-replace]').hidden;
+        click(row.querySelector('[data-env-replace]'));
+        const replacement = row.querySelector('[data-env-value]');
+        out.row = rowState(dom.rows)[1];
+        out.attrs = replacement.attributes; out.autocomplete = replacement.autocomplete;
+        out.storedGone = !row.querySelector('[data-env-stored]');
+        out.focus = document.activeElement === replacement;
+      JS
+
+      expect(result['replaceHidden']).to be(false)
+      expect(result['row']).to include('hasValueInput' => true, 'type' => 'password', 'value' => '',
+                                       'field' => 'env[1][name]', 'placeholder' => 'New value (leave blank to keep)')
+      expect(result['storedGone']).to be(true)
+      expect(result['focus']).to be(true)
+      expect(result['autocomplete']).to eq('off')
+      expect(result['attrs']).to include('autocomplete' => 'off', 'data-1p-ignore' => '', 'data-lpignore' => 'true',
+                                         'data-bwignore' => '')
+    end
+
+    it 'names the new input after its row so the value posts with the right secret' do
+      result = run({ 'rows' => rows }, <<~JS)
+        click(dom.rows.children[1].querySelector('[data-env-replace]'));
+        out.name = dom.rows.children[1].querySelector('[data-env-value]').name;
+      JS
+
+      expect(result['name']).to eq('env[1][value]')
+    end
+
+    it 'does nothing while the workspace is busy' do
+      result = run({ 'rows' => rows }, <<~JS)
+        api.toggleBusy(true);
+        click(dom.rows.children[1].querySelector('[data-env-replace]'));
+        out.has = !!dom.rows.children[1].querySelector('[data-env-value]');
+      JS
+
+      expect(result['has']).to be(false)
+    end
+
+    it 'counts a replaced secret as an unsaved edit without repeating what was typed' do
+      result = run({ 'rows' => rows }, <<~JS)
+        click(dom.rows.children[1].querySelector('[data-env-replace]'));
+        type(dom.rows.children[1].querySelector('[data-env-value]'), 'sk_live_topsecret');
+        out.status = dom.status.textContent;
+      JS
+
+      expect(result['status']).to start_with('Draft updated locally and not saved yet')
+      expect(result['status']).not_to include('sk_live_topsecret')
+    end
+  end
+
+  it 'asks password managers to ignore the inputs of a newly added row' do
+    result = run({ 'rows' => rows }, <<~JS)
+      click(dom.addButton);
+      const added = dom.rows.children[dom.rows.children.length - 1];
+      tick(added.querySelector('[data-env-secret]'), true);
+      out.attrs = added.querySelector('[data-env-value]').attributes;
+      out.autocomplete = added.querySelector('[data-env-value]').autocomplete;
+    JS
+
+    expect(result['autocomplete']).to eq('off')
+    expect(result['attrs']).to include('data-1p-ignore' => '', 'data-lpignore' => 'true', 'data-bwignore' => '')
   end
 
   it 'never repeats what is typed into a secret in the status message or anywhere else on the page' do
     result = run({ 'rows' => rows }, <<~JS)
+      click(dom.rows.children[1].querySelector('[data-env-replace]'));
       type(dom.rows.children[1].querySelector('[data-env-value]'), 'sk_live_topsecret');
       out.status = dom.status.textContent;
       out.rowsWithValue = rowState(dom.rows).filter((r) => r.value === 'sk_live_topsecret').length;
