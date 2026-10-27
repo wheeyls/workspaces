@@ -2,6 +2,7 @@
 
 require 'json'
 require 'securerandom'
+require_relative 'vault'
 
 module Workspaces
   class EnvironmentOverrides
@@ -13,6 +14,7 @@ module Workspaces
     MAX_ENTRIES = 100
     MAX_VALUE_BYTES = 8192
     MAX_BODY_BYTES = 128 * 1024
+    MAX_ROWS = 200
 
     def self.validate_entries!(entries)
       raise Invalid, 'Environment overrides must be a mapping' unless entries.is_a?(Hash)
@@ -45,12 +47,26 @@ module Workspaces
       @home = home
     end
 
+    # Everything a step should see: saved variables and secrets. Raises Vault::Error when secrets
+    # exist but cannot be read, so a run fails with a reason instead of starting without them.
     def load
+      load_plain.merge(secret_values)
+    end
+
+    # The variables that are safe to show. No secrets, and no vault access.
+    def load_plain
       load_file(file_path).merge(load_file(editable_file_path))
     end
 
     def keys
-      load.keys.sort
+      (load_plain.keys + secret_names).uniq.sort
+    end
+
+    # Names only, never values. Empty when the vault cannot be opened.
+    def secret_names
+      secret_values.keys.sort
+    rescue Vault::Error
+      []
     end
 
     def editable_values(defaults)
@@ -72,7 +88,28 @@ module Workspaces
         raise Invalid, 'Secret-like environment names cannot be stored in the visible editor'
       end
       persist_editable(entries, updated, defaults)
-      load
+      load_plain
+    end
+
+    # Saves the settings form: a list of rows, each { 'name', 'value', 'secret' }. Plain rows are
+    # stored as editable settings. Secret rows go to the vault and are write-only: a secret row
+    # with no value keeps the value already stored, and a secret that is no longer listed is removed.
+    #
+    # Nothing is changed unless every row is valid and the vault can be used. Messages name
+    # variables, never values.
+    def replace_rows(rows, defaults:)
+      raise Invalid, 'Environment rows must be a list' unless rows.is_a?(Array)
+      raise Invalid, "Environment rows are limited to #{MAX_ROWS}" if rows.length > MAX_ROWS
+
+      self.class.validate_entries!(defaults)
+      plain, secrets = split_rows(rows)
+      self.class.validate_entries!(plain)
+      self.class.validate_entries!(secrets.compact)
+      raise Invalid, 'Environment overrides are limited to 100 entries' if plain.length + secrets.length > MAX_ENTRIES
+
+      write_secrets(secrets)
+      persist_editable(plain, plain.reject { |name, value| defaults[name] == value }, defaults)
+      load_plain
     end
 
     def apply_preset(name, recipe: Recipe.new)
@@ -111,9 +148,12 @@ module Workspaces
       updated
     end
 
+    # Removes saved variables and secrets. Returns the secrets that could not be removed (see
+    # Vault.purge_everywhere), empty when everything went.
     def clear!
       delete_file!
       delete_file!(editable_file_path)
+      Vault.purge_everywhere(workspace_id)
     end
 
     def scrub(value)
@@ -261,10 +301,69 @@ module Workspaces
       raise Invalid, 'Environment storage does not allow symlinks' if path.symlink?
     end
 
+    # Filtering still hides every secret that can be read, even when something else is wrong.
     def scrub_values
-      load.values.reject(&:empty?).uniq.sort_by { |value| -value.bytesize }
-    rescue Invalid
+      values = [safely { load_plain.values }, safely { secret_values.values }].flatten
+      values.reject(&:empty?).uniq.sort_by { |value| -value.bytesize }
+    end
+
+    def safely
+      yield
+    rescue Invalid, Vault::Error
       []
+    end
+
+    def secret_values
+      Vault.provider.read(workspace_id)
+    end
+
+    def split_rows(rows)
+      plain = {}
+      secrets = {}
+      rows.each do |row|
+        raise Invalid, 'Each environment row needs a name and a value' unless row.is_a?(Hash)
+
+        name = row['name'].to_s.strip
+        value = row['value'].to_s
+        next if name.empty? && value.empty?
+
+        raise Invalid, 'Every variable needs a name' if name.empty?
+        raise Invalid, "#{name} is listed more than once" if plain.key?(name) || secrets.key?(name)
+
+        if [true, '1', 'true', 'on'].include?(row['secret'])
+          validate_name!(name)
+          secrets[name] = value.empty? ? nil : value
+        else
+          validate_plain_row!(name, value)
+          plain[name] = value
+        end
+      end
+      [plain, secrets]
+    end
+
+    def validate_plain_row!(name, value)
+      validate_name!(name)
+      validate_value!(value)
+      raise Invalid, "#{name} looks like a secret: tick Secret so it is stored write-only" if sensitive_name?(name)
+      raise Invalid, "#{name}: values must be a single line" if value.match?(/[\r\n]/)
+    end
+
+    # `submitted` maps each secret's name to its new value, or nil when the row was left blank. A blank
+    # row keeps the stored value. Existing secrets are never replaced blindly: if the vault cannot be
+    # read (wrong or missing key) an edit is refused rather than overwriting what is stored.
+    def write_secrets(submitted)
+      vault = Vault.provider
+      unless vault.available?
+        raise Vault::Unavailable, vault.problem unless submitted.empty?
+
+        return
+      end
+
+      stored = vault.read(workspace_id)
+      result = submitted.to_h do |name, value|
+        [name, value || stored.fetch(name) { raise Invalid, "#{name} is a new secret and needs a value" }]
+      end
+      vault.write(workspace_id, result) unless result == stored
     end
   end
 end

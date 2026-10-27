@@ -63,6 +63,17 @@ module Workspaces
                  })
     end
 
+    # Saves the settings form (rows of name / value / secret) and starts the workspace, restarting it
+    # if it is already up. See EnvironmentOverrides#replace_rows.
+    def replace_environment_rows(id, rows:)
+      restart = Backend.new(id).running? || sleeping?(id)
+      launch(id, restart: restart, force: true,
+                 prelaunch: lambda { |_workspace|
+                   defaults = Recipe.new.default_editable_env
+                   EnvironmentOverrides.new(id).replace_rows(rows, defaults: defaults)
+                 })
+    end
+
     def replace_editable_environment(id, text:)
       restart = Backend.new(id).running? || sleeping?(id)
       launch(id, restart: restart, force: true,
@@ -259,6 +270,8 @@ module Workspaces
         'log_tail' => include_log ? log_tail(id, log) : '', 'log_source' => log, 'port' => entry['port'],
         'environment_keys' => environment_keys(id),
         'editable_environment' => editable_environment(id),
+        'secret_names' => secret_names(id),
+        'vault' => Vault.status,
         'environment_presets' => environment_presets
       }
     end
@@ -471,6 +484,13 @@ module Workspaces
 
     def environment_keys(id)
       EnvironmentOverrides.new(id).keys
+    rescue EnvironmentOverrides::Invalid
+      []
+    end
+
+    # Names only. A secret's value is never part of a snapshot, a status response or a page.
+    def secret_names(id)
+      EnvironmentOverrides.new(id).secret_names
     rescue EnvironmentOverrides::Invalid
       []
     end

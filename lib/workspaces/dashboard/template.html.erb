@@ -44,9 +44,21 @@
             </div>
           <% end %>
           <div class="stack stack--tight">
-            <label class="env-input-label" for="editable-env">Environment variables</label>
-            <textarea id="editable-env" name="editable_env" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"><%= escape(editable_environment_text) %></textarea>
+            <p class="env-input-label" id="env-rows-label">Environment variables</p>
+            <div class="env-rows" id="env-rows" role="group" aria-labelledby="env-rows-label" data-env-rows>
+              <% environment_rows.each_with_index do |row, index| %>
+                <%= env_row_html(index, row) %>
+              <% end %>
+            </div>
+            <div class="env-row-actions">
+              <button type="button" class="button button--subtle button--small" data-env-add-row hidden>Add variable</button>
+            </div>
+            <% unless vault_status['available'] %>
+              <p class="muted env-vault-note" id="env-vault-note"><%= escape(vault_status['problem'] || 'Secrets are not available.') %></p>
+            <% end %>
+            <p class="muted env-secret-help">Secrets are write-only: once saved their values are never shown again. Leave a secret's value blank to keep what is stored.</p>
           </div>
+          <template id="env-row-template"><%= env_row_html('__INDEX__', { 'name' => '', 'value' => '', 'secret' => false }) %></template>
         </fieldset>
         <div class="env-actions">
           <button class="button button--primary" data-env-submit <%= 'disabled' if @presentation['busy'] %>><%= escape(@presentation['environment_submit']) %></button>
