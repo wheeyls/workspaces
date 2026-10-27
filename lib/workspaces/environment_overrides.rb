@@ -148,12 +148,12 @@ module Workspaces
       updated
     end
 
+    # Removes saved variables and secrets. Returns the secrets that could not be removed (see
+    # Vault.purge_everywhere), empty when everything went.
     def clear!
       delete_file!
       delete_file!(editable_file_path)
-      Vault.provider.purge(workspace_id)
-    rescue Vault::Error
-      nil
+      Vault.purge_everywhere(workspace_id)
     end
 
     def scrub(value)

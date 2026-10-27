@@ -97,6 +97,43 @@ RSpec.describe Workspaces::Vault do
       end
     end
 
+    describe '#scopes' do
+      it 'lists the workspace ids that have a secrets file, by name alone and without the key' do
+        file_vault.write('ws-1', 'A' => '1')
+        file_vault.write('ws-2', 'A' => '1')
+
+        expect(file_vault({}).scopes).to eq(%w(ws-1 ws-2))
+      end
+
+      it 'lists nothing for a missing directory' do
+        expect(file_vault.scopes).to eq([])
+      end
+
+      it 'skips anything that is not a workspace secrets file' do
+        file_vault.write('ws-1', 'A' => '1')
+        dir = Workspaces::Config.home.join('vault')
+        File.write(dir.join('notes.txt'), 'x')
+        File.write(dir.join('Bad_Name.enc'), 'x')
+        File.write(dir.join('..sneaky.enc'), 'x')
+        File.write(dir.join("#{'a' * 49}.enc"), 'x')
+        File.write(dir.join('.ws-9.enc.123.tmp'), 'x')
+        FileUtils.mkdir_p(dir.join('dir-1.enc'))
+        File.symlink(dir.join('ws-1.enc'), dir.join('link-1.enc'))
+
+        expect(file_vault.scopes).to eq(%w(ws-1))
+      end
+
+      it 'does not follow a symlinked directory' do
+        file_vault.write('ws-1', 'A' => '1')
+        dir = Workspaces::Config.home.join('vault')
+        moved = Workspaces::Config.home.join('vault-real')
+        File.rename(dir, moved)
+        File.symlink(moved, dir)
+
+        expect(file_vault.scopes).to eq([])
+      end
+    end
+
     describe 'what it refuses to do' do
       before { file_vault.write('ws-1', 'A' => 'sensitive') }
 

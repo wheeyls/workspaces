@@ -41,6 +41,8 @@ module Workspaces
       end
     end
 
+    # Removes the workspace and its saved settings and secrets. Returns the secrets that could not be
+    # removed (empty when all went), so callers can say so rather than report a clean removal.
     def remove(id, force: false)
       with_lock(id) do |workspace|
         raise ArgumentError, 'Workspace has uncommitted/untracked work' if !force && workspace.dirty?
@@ -50,6 +52,29 @@ module Workspaces
         StateStore.new(Config.state_file).delete(id)
         EnvironmentOverrides.new(id).clear!
       end
+    end
+
+    # Deletes stored secrets whose workspace no longer exists: removed by hand, with `git worktree
+    # remove`, or by a purge that failed. Returns { 'removed' => [...], 'kept' => [...],
+    # 'problems' => [...] }.
+    #
+    # It decides a workspace is gone only from the managed directory, and refuses to guess when that
+    # directory cannot be read, so a missing or unmounted volume is never mistaken for "everything
+    # was deleted". With dry_run it reports what it would remove and changes nothing.
+    def sweep_orphaned_secrets(dry_run: false)
+      root = Config.worktrees_dir(create: false)
+      unless root.directory? && !root.symlink?
+        raise ArgumentError, 'The workspaces directory cannot be read, so nothing was removed'
+      end
+
+      live = root.children.select { |path| path.directory? && !path.symlink? }.map { |path| path.basename.to_s }
+      orphans = Vault.scopes - live
+      result = { 'removed' => [], 'kept' => live & Vault.scopes, 'problems' => [] }
+      orphans.each do |id|
+        problems = dry_run ? [] : Vault.purge_everywhere(id)
+        problems.empty? ? result['removed'] << id : result['problems'].concat(problems.map { |problem| "#{id}: #{problem}" })
+      end
+      result
     end
 
     def update_pr(id)

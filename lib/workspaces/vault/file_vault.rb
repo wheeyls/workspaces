@@ -63,6 +63,19 @@ module Workspaces
         File.unlink(path) if path.exist? || path.symlink?
       end
 
+      # The workspace ids that have a file here, found by name alone (no key needed). A symlinked
+      # or missing directory has none that can be trusted, so it lists nothing.
+      def scopes
+        return [] if directory.symlink? || !directory.directory?
+
+        directory.children.filter_map do |path|
+          next unless path.extname == '.enc' && !path.symlink? && path.file?
+
+          id = path.basename('.enc').to_s
+          id if id.match?(/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/) && id.length <= 48
+        end.sort
+      end
+
       private
 
       def require_usable!

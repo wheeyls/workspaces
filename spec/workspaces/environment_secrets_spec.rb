@@ -134,13 +134,257 @@ RSpec.describe 'environment secrets' do
     end
   end
 
-  describe Workspaces::Registry do
-    it 'purges a removed workspace\'s secrets' do
-      store.replace_rows([row('A_KEY', secret, secret: true)], defaults: {})
+  describe 'removal' do
+    let(:vault_dir) { Workspaces::Config.home.join('vault') }
+    let(:registry) { Workspaces::Registry.new }
 
-      described_class.new.remove(workspace.id, force: true)
+    def seed(workspace_id = workspace.id)
+      Workspaces::EnvironmentOverrides.new(workspace_id).replace_rows([row('A_KEY', secret, secret: true)], defaults: {})
+    end
 
-      expect(Dir.glob(Workspaces::Config.home.join('vault', '*').to_s)).to be_empty
+    it 'purges secrets through every way a workspace can be removed, and reports nothing left' do
+      seed
+
+      expect(registry.remove(workspace.id, force: true)).to eq([])
+      expect(Dir.glob(vault_dir.join('*').to_s)).to be_empty
+    end
+
+    it 'keeps the secrets when removal is refused' do
+      seed
+      File.write(workspace.path.join('scratch.txt'), 'uncommitted')
+
+      expect { registry.remove(workspace.id, force: false) }.to raise_error(ArgumentError, /uncommitted/)
+      expect(vault_dir.join("#{workspace.id}.enc")).to exist
+    end
+
+    it 'purges the file vault even when WORKSPACES_VAULT now names something else' do
+      seed
+      ENV['WORKSPACES_VAULT'] = 'elsewhere'
+
+      expect(registry.remove(workspace.id, force: true)).to eq([])
+      expect(Dir.glob(vault_dir.join('*').to_s)).to be_empty
+    ensure
+      ENV.delete('WORKSPACES_VAULT')
+    end
+
+    it 'purges without needing the master key' do
+      seed
+      ENV.delete('WORKSPACES_MASTER_KEY')
+
+      expect(registry.remove(workspace.id, force: true)).to eq([])
+      expect(Dir.glob(vault_dir.join('*').to_s)).to be_empty
+    end
+
+    it 'says so when a secret could not be removed, instead of reporting a clean removal' do
+      seed
+      moved = Workspaces::Config.home.join('vault-real')
+      File.rename(vault_dir, moved)
+      File.symlink(moved, vault_dir)
+
+      leftover = registry.remove(workspace.id, force: true)
+
+      expect(leftover.length).to eq(1)
+      expect(leftover.first).to match(/\Afile: .*symlinks/)
+      expect(leftover.first).not_to include(secret)
+      expect(Dir.glob(moved.join('*').to_s).length).to eq(1)
+    end
+
+    it 'asks a second, differently named provider as well' do
+      seen = []
+      other = Class.new(Workspaces::Vault::Provider) do
+        define_method(:name) { 'other' }
+        define_method(:read) { |_scope| {} }
+        define_method(:write) { |_scope, _entries| nil }
+        define_method(:purge) { |scope| seen << scope }
+      end
+      Workspaces::Vault.register('other', other)
+      ENV['WORKSPACES_VAULT'] = 'other'
+
+      Workspaces::Vault.purge_everywhere('ws-1')
+
+      expect(seen).to eq(%w(ws-1))
+    ensure
+      ENV.delete('WORKSPACES_VAULT')
+    end
+
+    it 'reports a provider that raises, and still purges the others' do
+      seed
+      broken = Class.new(Workspaces::Vault::Provider) do
+        define_method(:name) { 'broken' }
+        define_method(:purge) { |_scope| raise Workspaces::Vault::Unavailable, 'service is down' }
+      end
+      Workspaces::Vault.register('broken', broken)
+      ENV['WORKSPACES_VAULT'] = 'broken'
+
+      expect(Workspaces::Vault.purge_everywhere(workspace.id)).to eq(['broken: service is down'])
+      expect(vault_dir.join("#{workspace.id}.enc")).not_to exist
+    ensure
+      ENV.delete('WORKSPACES_VAULT')
+    end
+
+    describe 'the CLI' do
+      let(:cli) { Workspaces::Cli.new }
+
+      def run(*args)
+        out = StringIO.new
+        err = StringIO.new
+        real = [$stdout, $stderr]
+        $stdout = out
+        $stderr = err
+        code = cli.run(args)
+        [code, out.string, err.string]
+      ensure
+        $stdout, $stderr = real
+      end
+
+      it 'removes a workspace and says nothing is left' do
+        seed
+
+        code, out, = run('remove', workspace.id, '--force', '--json')
+
+        expect(code).to eq(0)
+        expect(JSON.parse(out)).to include('removed' => true, 'secrets_left' => [])
+      end
+
+      it 'exits non-zero and names the follow-up when secrets are left behind' do
+        seed
+        moved = Workspaces::Config.home.join('vault-real')
+        File.rename(vault_dir, moved)
+        File.symlink(moved, vault_dir)
+
+        code, out, err = run('remove', workspace.id, '--force', '--json')
+
+        expect(code).to eq(1)
+        expect(JSON.parse(out)['secrets_left'].length).to eq(1)
+        expect(err).to include('could not be', 'purge-secrets')
+        expect(out + err).not_to include(secret)
+      end
+    end
+
+    describe 'the dashboard remove button' do
+      let(:app) { Workspaces::FrontDoor.new(coordinator: Workspaces::Coordinator.new) }
+
+      def remove_request
+        env = Rack::MockRequest.env_for("http://localhost:4747/workspaces/#{workspace.id}/remove", method: 'POST',
+                                        input: "confirm_id=#{workspace.id}")
+        env.merge!('HTTP_HOST' => 'localhost:4747', 'HTTP_ORIGIN' => 'http://localhost:4747',
+                   'CONTENT_TYPE' => 'application/x-www-form-urlencoded')
+        app.call(env)
+      end
+
+      it 'redirects when everything was removed' do
+        seed
+
+        expect(remove_request.first).to eq(303)
+      end
+
+      it 'does not say "removed" when a secret could not be removed' do
+        seed
+        moved = Workspaces::Config.home.join('vault-real')
+        File.rename(vault_dir, moved)
+        File.symlink(moved, vault_dir)
+
+        status, _, body = remove_request
+
+        expect(status).to eq(500)
+        expect(body.join).to include('stored secrets could not be', 'purge-secrets')
+        expect(body.join).not_to include(secret)
+      end
+    end
+
+    describe 'sweeping orphans' do
+      let(:live_id) { workspace.id }
+
+      # A real install always has the managed directory; the sweep refuses to run without it.
+      before { Workspaces::Config.worktrees_dir }
+
+      def orphan(id = 'main-deadbeef')
+        seed(id)
+        id
+      end
+
+      it 'removes secrets whose workspace is gone and keeps the live ones' do
+        seed(live_id)
+        gone = orphan
+
+        result = registry.sweep_orphaned_secrets
+
+        expect(result).to include('removed' => [gone], 'kept' => [live_id], 'problems' => [])
+        expect(vault_dir.join("#{gone}.enc")).not_to exist
+        expect(vault_dir.join("#{live_id}.enc")).to exist
+      end
+
+      it 'catches a workspace deleted by hand' do
+        seed(live_id)
+        FileUtils.rm_rf(workspace.path)
+
+        expect(registry.sweep_orphaned_secrets['removed']).to eq([live_id])
+      end
+
+      it 'changes nothing on a dry run, and says what it would remove' do
+        gone = orphan
+
+        result = registry.sweep_orphaned_secrets(dry_run: true)
+
+        expect(result['removed']).to eq([gone])
+        expect(vault_dir.join("#{gone}.enc")).to exist
+      end
+
+      it 'refuses to guess when the workspaces directory cannot be read, so a missing volume deletes nothing' do
+        orphan
+        FileUtils.rm_rf(Workspaces::Config.worktrees_dir(create: false))
+
+        expect { registry.sweep_orphaned_secrets }.to raise_error(ArgumentError, /nothing was removed/)
+        expect(Dir.glob(vault_dir.join('*').to_s).length).to eq(1)
+      end
+
+      it 'ignores files that are not workspace secrets' do
+        orphan
+        FileUtils.mkdir_p(vault_dir)
+        File.write(vault_dir.join('notes.txt'), 'keep me')
+        File.write(vault_dir.join('.hidden.enc.tmp'), 'keep me')
+        File.write(vault_dir.join('Bad_Name.enc'), 'keep me')
+        FileUtils.mkdir_p(vault_dir.join('subdir.enc'))
+
+        registry.sweep_orphaned_secrets
+
+        expect(Dir.children(vault_dir).sort).to eq(%w(.hidden.enc.tmp Bad_Name.enc notes.txt subdir.enc))
+      end
+
+      it 'does not follow a symlinked vault directory' do
+        orphan
+        moved = Workspaces::Config.home.join('vault-real')
+        File.rename(vault_dir, moved)
+        File.symlink(moved, vault_dir)
+
+        expect(registry.sweep_orphaned_secrets['removed']).to eq([])
+        expect(Dir.glob(moved.join('*').to_s).length).to eq(1)
+      end
+
+      it 'does nothing when there are no secrets at all' do
+        expect(registry.sweep_orphaned_secrets).to include('removed' => [], 'problems' => [])
+      end
+
+      it 'is available as purge-secrets, with --dry-run' do
+        gone = orphan
+        cli = Workspaces::Cli.new
+        out = StringIO.new
+        real = $stdout
+        $stdout = out
+        dry = cli.run(['purge-secrets', '--dry-run', '--json'])
+        $stdout = real
+
+        expect(dry).to eq(0)
+        expect(JSON.parse(out.string)).to include('removed' => [gone], 'dry_run' => true)
+        expect(vault_dir.join("#{gone}.enc")).to exist
+
+        $stdout = StringIO.new
+        expect(cli.run(['purge-secrets', '--json'])).to eq(0)
+        $stdout = real
+        expect(vault_dir.join("#{gone}.enc")).not_to exist
+      ensure
+        $stdout = real
+      end
     end
   end
 

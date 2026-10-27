@@ -17,7 +17,7 @@ module Workspaces
     COMMANDS = {
       'serve' => :serve, 'create' => :create, 'list' => :list, 'show' => :show,
       'start' => :lifecycle, 'prepare' => :lifecycle, 'restart' => :lifecycle,
-      'stop' => :stop, 'remove' => :remove, 'resume' => :resume, 'keep-awake' => :keep_awake, 'help' => :help
+      'stop' => :stop, 'remove' => :remove, 'purge-secrets' => :purge_secrets, 'resume' => :resume, 'keep-awake' => :keep_awake, 'help' => :help
     }.freeze
     def self.run(argv)
       new.run(argv.dup)
@@ -88,6 +88,7 @@ module Workspaces
       parser.on('--from REF') { |value| options[:from] = value }
       parser.on('--json') { options[:json] = true }
       parser.on('--force') { options[:force] = true }
+      parser.on('--dry-run') { options[:dry_run] = true }
       parser.on('--off') { options[:off] = true }
     end
 
@@ -207,8 +208,21 @@ module Workspaces
     end
 
     def remove(id, options)
-      registry.remove(id, force: options[:force])
-      emit({ 'id' => id, 'removed' => true, 'branch_preserved' => true }, options)
+      leftover = registry.remove(id, force: options[:force])
+      leftover = [] unless leftover.is_a?(Array)
+      emit({ 'id' => id, 'removed' => true, 'branch_preserved' => true, 'secrets_left' => leftover }, options)
+      return if leftover.empty?
+
+      warn "The workspace was removed, but its secrets could not be: #{leftover.join('; ')}. " \
+           'Fix that, then run `workspaces purge-secrets`.'
+      raise ArgumentError, 'Secrets were left behind'
+    end
+
+    # Deletes stored secrets whose workspace no longer exists. `--dry-run` lists them without deleting.
+    def purge_secrets(_id, options)
+      result = registry.sweep_orphaned_secrets(dry_run: options[:dry_run])
+      emit(result.merge('dry_run' => !!options[:dry_run]), options)
+      raise ArgumentError, "Could not remove: #{result['problems'].join('; ')}" unless result['problems'].empty?
     end
 
     def execute(argv)
@@ -243,7 +257,7 @@ module Workspaces
       'Usage: bin/workspaces serve [--require FILE] | create (--branch REF | --pr NUMBER | --new-branch NAME [--from REF]) [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
         'list [--pr NUMBER] [--json] | show/start/prepare/restart ID [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
         'resume ID [--from STEP | --only STEP] [--json] | stop ID | keep-awake ID [--off] | ' \
-        'exec ID -- COMMAND... | remove ID [--force]'
+        'exec ID -- COMMAND... | remove ID [--force] | purge-secrets [--dry-run]'
     end
 
     def help(*)

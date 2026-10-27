@@ -272,11 +272,28 @@ Without `WORKSPACES_MASTER_KEY` the settings page says secrets are turned off, a
 everything else works as before. With the wrong key a run fails with a plain reason
 rather than starting without its secrets, and saving is refused so stored secrets are
 never overwritten. The master key is read only by the front door: it is removed from
-the environment of every step, server and `exec` command. Removing a workspace deletes
-its secrets.
+the environment of every step, server and `exec` command.
+
+Removing a workspace (`remove`, or the dashboard's Remove button) deletes its secrets
+too. The file vault is always asked to delete its own files, even if `WORKSPACES_VAULT`
+has since been changed. A secret that cannot be deleted is reported rather than hidden:
+`remove` exits non-zero and lists it under `secrets_left`, and the dashboard says the
+workspace was removed but its secrets were not. Secrets live outside the workspace's
+checkout, in `$WORKSPACES_HOME/vault/<workspace-id>.enc`, with no other record of the
+link, so a workspace deleted some other way (by hand, or `git worktree remove`) leaves
+its file behind. Clean those up with:
+
+```sh
+bin/workspaces purge-secrets --dry-run   # list secrets whose workspace no longer exists
+bin/workspaces purge-secrets             # delete them
+```
+
+It refuses to run if the workspaces directory cannot be read, so an unmounted volume is
+never mistaken for "every workspace is gone".
 
 Another store can be added behind the same small interface (`available?`/`problem`,
-`read(scope)`, `write(scope, entries)`, `purge(scope)`): subclass
+`read(scope)`, `write(scope, entries)`, `purge(scope)`, and optionally `scopes` to
+list what it holds so `purge-secrets` can find orphans): subclass
 `Workspaces::Vault::Provider` and call `Workspaces::Vault.register('name', YourClass)`
 from a file loaded with `serve --require`, then set `WORKSPACES_VAULT=name`.
 

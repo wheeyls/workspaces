@@ -171,9 +171,13 @@ module Workspaces
       return response(413, 'Deletion confirmation is too large') if request.content_length.to_i > 512
       return response(422, 'Type the exact workspace ID to confirm deletion') unless request.POST['confirm_id'] == id
 
-      @registry.remove(id, force: true)
+      leftover = @registry.remove(id, force: true)
       @tracker.forget(id)
-      redirect("#{Config.public_origin}/workspaces")
+      return redirect("#{Config.public_origin}/workspaces") if !leftover.is_a?(Array) || leftover.empty?
+
+      # The workspace is gone, but its secrets are not, and saying "removed" would be untrue.
+      response(500, "The workspace was removed, but its stored secrets could not be: #{leftover.join('; ')}. " \
+                    'Fix that, then run `workspaces purge-secrets`.')
     rescue ArgumentError, Worktree::CommandFailedError, SystemCallError
       response(409, 'Workspace was not removed. Check the server logs and retry when safe.')
     end

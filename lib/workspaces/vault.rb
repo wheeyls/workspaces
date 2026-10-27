@@ -46,6 +46,12 @@ module Workspaces
         raise NotImplementedError, "#{self.class} must implement purge"
       end
 
+      # Every scope this provider holds secrets for. Used to find the ones whose workspace is gone, so
+      # a provider that cannot list its scopes returns nil and is simply never swept.
+      def scopes
+        nil
+      end
+
       def status
         { 'provider' => name, 'available' => available?, 'problem' => problem }
       end
@@ -80,6 +86,10 @@ module Workspaces
       def purge(_scope)
         nil
       end
+
+      def scopes
+        nil
+      end
     end
 
     @providers = {}
@@ -98,6 +108,27 @@ module Workspaces
 
       def status
         provider.status
+      end
+
+      # Removes a workspace's secrets, whatever WORKSPACES_VAULT says now. The built-in file vault is
+      # always asked, because its files stay on disk when the setting is changed or mistyped; the
+      # configured provider is asked as well when it is a different one. Returns the problems it
+      # could not clear, as plain sentences with no key material, so a caller can say so instead of
+      # reporting a removal that left secrets behind.
+      # Scopes held by the built-in file vault and the configured provider, for finding orphans.
+      def scopes
+        [@providers.fetch(DEFAULT_PROVIDER).new, provider].uniq(&:name).flat_map { |vault| vault.scopes || [] }.uniq.sort
+      rescue StandardError
+        []
+      end
+
+      def purge_everywhere(scope)
+        providers = [@providers.fetch(DEFAULT_PROVIDER).new, provider]
+        providers.uniq(&:name).each_with_object([]) do |vault, problems|
+          vault.purge(scope)
+        rescue StandardError => e
+          problems << "#{vault.name}: #{e.message}"
+        end
       end
     end
   end
