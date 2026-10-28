@@ -46,7 +46,7 @@ module Workspaces
       'busy' => {
         sections: %w(lead technical log),
         headline: 'Setting things up…',
-        summary: "We'll take you to the preview as soon as it's ready.",
+        summary: 'This page keeps itself up to date. Open the preview once it is ready.',
         environment_submit: 'Save & restart', environment_title: 'Change settings',
         open_environment: false, open_technical: true
       },
