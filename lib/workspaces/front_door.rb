@@ -12,7 +12,7 @@ require_relative 'sleep_policy'
 module Workspaces
   class FrontDoor
     WORKSPACE_ROUTE = %r{\A/workspaces/([a-z0-9]+(?:-[a-z0-9]+)*)
-                          (?:/(status|start|prepare|restart|resume|stop|remove|update-pr|environment|keep-awake|allow-sleep))?\z}x
+                          (?:/(status|start|prepare|restart|resume|stop|remove|update-pr|environment|keep-awake|allow-sleep|settings))?\z}x
 
     # Rack env keys set on requests that reach a ready workspace backend, for use by
     # middleware registered with Workspaces.configure_proxy.
@@ -99,7 +99,7 @@ module Workspaces
 
     def action_request(request, id, action)
       return update_environment(request, id) if action == 'environment'
-      return status_response(request, id, action) if action.nil? || action == 'status'
+      return status_response(request, id, action) if action.nil? || %w(status settings).include?(action)
       return response(405, 'Use POST') unless request.post?
       return response(403, 'Actions require the configured dashboard origin') unless same_origin?(request)
       return remove(request, id) if action == 'remove'
@@ -116,8 +116,10 @@ module Workspaces
       return response(400, 'Unknown workspace log') unless %w(setup backend).include?(source)
 
       snapshot = @coordinator.snapshot(id, log: source)
-      body = action ? JSON.generate(snapshot) : DashboardView.render(snapshot)
-      response(200, body, type: action ? 'application/json' : 'text/html', head: request.head?)
+      return response(200, JSON.generate(snapshot), type: 'application/json', head: request.head?) if action == 'status'
+
+      page = action == 'settings' ? DashboardView.render(snapshot) : DashboardView.card(snapshot)
+      response(200, page, type: 'text/html', head: request.head?)
     end
 
     # Retries from the first unfinished step by default; `from=<step>` re-runs that step and every
@@ -148,7 +150,9 @@ module Workspaces
       return response(403, 'Actions require the configured dashboard origin') unless same_origin?(request)
 
       params = environment_params(request)
-      updated = if params.key?('env')
+      updated = if params.key?('preset')
+                  start_with_preset(id, params['preset'])
+                elsif params.key?('env')
                   @coordinator.replace_environment_rows(id, rows: parse_environment_rows(params))
                 elsif params.key?('editable_env')
                   @coordinator.replace_editable_environment(id, text: parse_editable_environment(params))
@@ -162,6 +166,14 @@ module Workspaces
       response(422, e.message)
     rescue Vault::Error => e
       response(422, e.message)
+    end
+
+    # The card's start form for a new workspace: one preset (or the defaults, when left blank).
+    def start_with_preset(id, preset)
+      raise EnvironmentOverrides::Invalid, 'Choose a preset by name' unless preset.is_a?(String)
+      return @coordinator.apply_environment_preset(id, name: preset) unless preset.empty?
+
+      @coordinator.start(id)
     end
 
     def remove(request, id)
@@ -182,11 +194,12 @@ module Workspaces
       response(409, 'Workspace was not removed. Check the server logs and retry when safe.')
     end
 
+    # Update from PR is a settings-page control and reports its outcome there.
     def update_pr(id)
       @registry.update_pr(id)
-      redirect(Config.dashboard_url(id))
+      redirect(Config.settings_url(id))
     rescue Worktree::UpdateError
-      redirect(Config.dashboard_url(id))
+      redirect(Config.settings_url(id))
     end
 
     def create(request)

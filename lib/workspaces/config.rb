@@ -130,6 +130,10 @@ module Workspaces
       "#{public_origin}/workspaces/#{validate_id!(id)}"
     end
 
+    def self.settings_url(id)
+      "#{dashboard_url(id)}/settings"
+    end
+
     def self.validate_preview_subdomain_prefix!(prefix)
       parts = prefix.to_s.split('.', -1)
       raise ArgumentError, 'WORKSPACES_SUBDOMAIN_PREFIX must not be empty' if parts.empty? || parts.any?(&:empty?)

@@ -673,3 +673,23 @@ p:empty:not([role]):not([aria-live]) { display: none; }
     align-items: flex-start;
   }
 }
+
+/* The card: the default page for a workspace. One small square in the middle of the screen. */
+.card-page { min-block-size: 100dvb; display: grid; place-items: center; padding: var(--space-6) var(--space-3); }
+.card { inline-size: min(100%, 26rem); display: grid; gap: var(--space-5); align-content: start; padding: var(--space-6); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.card__header { display: flex; justify-content: space-between; align-items: start; gap: var(--space-3); }
+.card__name { display: grid; gap: var(--space-1); min-inline-size: 0; }
+.card__id { overflow-wrap: anywhere; font-weight: 600; }
+.card__text { display: grid; gap: var(--space-2); }
+.card h1 { font-size: 1.5rem; line-height: 1.2; }
+.card__summary { color: var(--muted); line-height: 1.5; }
+.card__actions { display: grid; gap: var(--space-3); }
+.card__actions:not(:has(*:not([hidden]))) { display: none; }
+.card__actions .button, .card__actions form, .card__start .button { inline-size: 100%; text-align: center; }
+.card__actions .button { display: inline-flex; justify-content: center; align-items: center; text-decoration: none; }
+.card .button--large { padding-inline: var(--space-4); }
+.card .setup-error pre { max-block-size: 8rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.card select { inline-size: 100%; padding: var(--space-2); color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--space-1); }
+.icon-link { display: inline-flex; padding: var(--space-2); border-radius: var(--space-1); color: var(--muted); }
+.icon-link:hover { color: var(--text); background: color-mix(in oklab, var(--accent) 12%, transparent); }
+.icon-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

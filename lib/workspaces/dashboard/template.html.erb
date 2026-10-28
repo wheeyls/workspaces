@@ -1,7 +1,7 @@
 <main class="dashboard" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>" data-disclosure-state="<%= escape(@presentation['state']) %>">
   <header class="dashboard__header">
     <div class="dashboard__title"><p class="eyebrow">Managed workspace</p><h1><%= @id %></h1></div>
-    <a class="button button--subtle" href="/workspaces">All workspaces</a>
+    <div class="header-actions"><a class="button button--subtle" href="/workspaces/<%= @id %>">Back to workspace</a><a class="button button--subtle" href="/workspaces">All workspaces</a></div>
   </header>
   <section class="status-panel lead" id="lead" data-section="lead" aria-labelledby="status" <%= 'hidden' unless section?('lead') %>>
     <div class="lead__text">
@@ -108,5 +108,5 @@
       </section>
     </div>
   </details>
-  <noscript><a href="/workspaces/<%= @id %>">Refresh status</a></noscript>
+  <noscript><a href="/workspaces/<%= @id %>/settings">Refresh status</a></noscript>
 </main>

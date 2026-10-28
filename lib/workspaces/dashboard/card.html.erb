@@ -1,0 +1,42 @@
+<main class="card-page" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>" data-disclosure-state="<%= escape(@presentation['state']) %>">
+  <section class="card" aria-labelledby="status">
+    <header class="card__header">
+      <p class="card__name"><span class="eyebrow">Workspace</span><span class="card__id"><%= @id %></span></p>
+      <a class="icon-link" href="/workspaces/<%= @id %>/settings" aria-label="Settings and details" title="Settings and details"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Zm7.4-2.4a7.6 7.6 0 0 0 0-1.6l1.7-1.3-1.7-3-2 .8a7.4 7.4 0 0 0-1.4-.8L15.7 4h-3.4l-.3 2.1a7.4 7.4 0 0 0-1.4.8l-2-.8-1.7 3 1.7 1.3a7.6 7.6 0 0 0 0 1.6l-1.7 1.3 1.7 3 2-.8c.4.3.9.6 1.4.8l.3 2.1h3.4l.3-2.1c.5-.2 1-.5 1.4-.8l2 .8 1.7-3Z"/></svg></a>
+    </header>
+    <div class="card__text">
+      <h1 id="status" role="status"><%= escape(@presentation['headline']) %></h1>
+      <p id="summary" class="card__summary"><%= escape(@presentation['summary']) %></p>
+      <p><span class="badge" id="environment-preset-badge" <%= 'hidden' unless @presentation['current_preset'] %>><%= escape(preset_badge_text) %></span></p>
+    </div>
+    <div class="build-progress" id="build-progress" <%= 'hidden' unless @presentation['progress'] %>>
+      <div class="progress-bar" id="progress-bar" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= progress_percent %>" aria-valuetext="<%= escape(progress_valuetext) %>" data-slow="<%= @presentation.dig('progress', 'slow') ? 'true' : 'false' %>"><span class="progress-bar__fill" id="progress-fill" style="inline-size: <%= progress_percent %>%"></span></div>
+      <div class="progress-meta">
+        <p class="progress-meta__step"><span class="activity-dot" aria-hidden="true"></span><span id="progress-step"><%= escape(progress_step_text) %></span></p>
+        <p class="progress-meta__time muted"><span id="progress-percent"><%= progress_percent %>%</span><span aria-hidden="true"> · </span><span id="elapsed"><%= escape(progress_elapsed_text) %></span><span id="progress-eta"><%= escape(progress_eta_suffix) %></span></p>
+      </div>
+    </div>
+    <form method="post" action="<%= environment_presets.empty? ? "/workspaces/#{@id}/start" : "/workspaces/#{@id}/environment" %>" class="card__start stack stack--snug lead__action" data-only-state="idle" <%= 'hidden' unless @presentation['state'] == 'idle' %>>
+      <% unless environment_presets.empty? %>
+        <label class="field" for="card-preset">Preset
+          <select id="card-preset" name="preset">
+            <% environment_presets.each_key do |name| %><option value="<%= escape(name) %>"><%= escape(name) %></option><% end %>
+            <option value="">Defaults</option>
+          </select>
+        </label>
+      <% end %>
+      <button class="button button--primary button--large"><%= escape(@presentation['environment_submit']) %></button>
+    </form>
+    <div class="card__actions">
+      <a id="preview" class="button button--primary button--large" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
+      <div id="lead-action" class="lead__action"><%= lead_action_form(@presentation['lead_action']) %></div>
+    </div>
+    <p id="sleep-note" class="muted" <%= 'hidden' if sleep_note.empty? %>><%= escape(sleep_note) %></p>
+    <section class="error-panel setup-error" id="error-panel" role="alert" <%= 'hidden' unless @presentation['error'] %>>
+      <h2>What went wrong</h2><pre id="error"><%= escape(@presentation['error']) %></pre>
+      <a href="/workspaces/<%= @id %>/settings">Open the full log</a>
+    </section>
+    <p id="connection" role="status"></p>
+  </section>
+  <noscript><a href="/workspaces/<%= @id %>">Refresh status</a></noscript>
+</main>

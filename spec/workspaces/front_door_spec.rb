@@ -26,7 +26,7 @@ RSpec.describe Workspaces::FrontDoor do
     File.write(Workspaces::Config.setup_log_path(id), "setup marker\n")
     File.write(Workspaces::Config.backend_log_path(id), "backend marker\n")
 
-    status, _, page = request("/workspaces/#{id}?log=backend")
+    status, _, page = request("/workspaces/#{id}/settings?log=backend")
     expect(status).to eq(200)
     expect(page.join).to include('backend marker')
     expect(page.join).not_to include('setup marker')

@@ -29,6 +29,12 @@ module Workspaces
       HTML
     end
 
+    # The default page for a workspace: one small card with the headline, progress and the single
+    # next action. Everything else lives on the settings page.
+    def self.card(snapshot)
+      new(snapshot).render_card
+    end
+
     def self.pull_request(number, workspaces)
       new({}).render_pull_request(number, workspaces)
     end
@@ -60,6 +66,13 @@ module Workspaces
       @id = Config.validate_id!(@snapshot.fetch('workspace_id'))
       document("Workspace #{@id}",
                ERB.new(File.read(File.join(__dir__, 'dashboard/template.html.erb'),
+                                 encoding: 'UTF-8')).result(binding))
+    end
+
+    def render_card
+      @id = Config.validate_id!(@snapshot.fetch('workspace_id'))
+      document("Workspace #{@id}",
+               ERB.new(File.read(File.join(__dir__, 'dashboard/card.html.erb'),
                                  encoding: 'UTF-8')).result(binding))
     end
 

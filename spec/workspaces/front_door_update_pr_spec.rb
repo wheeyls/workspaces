@@ -21,7 +21,7 @@ RSpec.describe Workspaces::FrontDoor do
 
   it 'shows a PR-only source action and protects it from GET and foreign origins' do
     id = workspace.id
-    html = request("/workspaces/#{id}").last.join
+    html = request("/workspaces/#{id}/settings").last.join
     expect(html).to include('Update from PR', "action=\"/workspaces/#{id}/update-pr\"")
     path = "/workspaces/#{id}/update-pr"
     expect(request(path).first).to eq(405)
@@ -33,7 +33,7 @@ RSpec.describe Workspaces::FrontDoor do
     allow(registry).to receive(:update_pr).with(id).and_return('updated' => true)
     status, headers, = request("/workspaces/#{id}/update-pr", method: 'POST', origin: 'http://localhost:4747')
     expect(status).to eq(303)
-    expect(headers['location']).to eq("http://localhost:4747/workspaces/#{id}")
+    expect(headers['location']).to eq("http://localhost:4747/workspaces/#{id}/settings")
     expect(registry).to have_received(:update_pr).with(id)
   end
 
@@ -44,11 +44,11 @@ RSpec.describe Workspaces::FrontDoor do
       raise Workspaces::Worktree::UpdateError, 'Retained stash for recovery'
     end
     expect(request("/workspaces/#{id}/update-pr", method: 'POST', origin: 'http://localhost:4747').first).to eq(303)
-    expect(request("/workspaces/#{id}").last.join).to include('Retained stash for recovery')
+    expect(request("/workspaces/#{id}/settings").last.join).to include('Retained stash for recovery')
   end
 
   it 'does not offer Update from PR for ordinary branch workspaces' do
     branch_workspace = registry.create(branch: 'main')
-    expect(request("/workspaces/#{branch_workspace.id}").last.join).not_to include('Update from PR')
+    expect(request("/workspaces/#{branch_workspace.id}/settings").last.join).not_to include('Update from PR')
   end
 end
