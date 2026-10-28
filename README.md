@@ -120,7 +120,9 @@ A ready workspace that sees no preview traffic for a while is put to sleep: its 
 managed process group, and nothing shared such as PostgreSQL or Redis) is stopped, and the
 front door keeps answering on the same preview URL. The worktree, database, dependencies, built
 assets, environment settings and build history are untouched. The first request to a sleeping
-preview wakes it, waits for readiness and then forwards that request.
+preview wakes it. A browser opening a page is shown the waiting card (below) at that address, and
+the card reloads the page once the workspace is ready. Any other request (an API call, an asset, a
+form post) waits for readiness and is then forwarded.
 
 ```sh
 WORKSPACES_SLEEP_AFTER_MINUTES=30   # default; 15 also works; 0 switches sleeping off
@@ -154,7 +156,8 @@ What counts as activity:
 How waking behaves:
 
 - Only an intentionally sleeping workspace wakes. A workspace stopped by hand, failed, or still
-  preparing is never started by traffic; a GET still lands on the dashboard as before.
+  preparing is never started by traffic. A browser opening a page is shown the waiting card; any
+  other GET is redirected to the card on the dashboard host, and other methods get `503`.
 - Simultaneous first requests share one wake and start one server. A request is sent upstream
   once, never replayed, and keeps its method and body.
 - A wake runs only the server and readiness steps. If a step before the server changed in
@@ -193,6 +196,43 @@ the following foreground readiness step must verify it is *this* boot (the runne
 provides `WORKSPACE_RUN_ID`). The runner also supplies `WORKSPACE_URL` and
 `WORKSPACE_HOST` for applications that need browser-facing URLs and host settings.
 `serve` does **not** start workspace backends; use `start` or `restart` for those.
+
+### The workspace card and the settings page
+
+`/workspaces/<id>` is one small card in the middle of the screen: a headline, the progress bar
+while something is running, the preset in use, and the single next action. That action is **Open
+workspace** when ready, **Wake workspace** or **Start workspace** when asleep or stopped, and
+**Retry failed step** or **Continue setup** after a failure. A gear links to
+`/workspaces/<id>/settings`, which is the full page: environment variables and secrets, setup
+steps and logs, workspace details, lifecycle controls and removal. A new workspace starts from the
+card by choosing one preset (or the defaults); use the settings page to edit variables first.
+Update from PR lives on the settings page and returns there. Nothing opens the preview for you;
+the card only offers the button.
+
+The `/workspaces` list and the PR page are unchanged.
+
+#### The waiting card on a preview host
+
+When a browser opens a page of a workspace that is not serving (stopped, preparing, failed or
+asleep), the preview host answers `200` with the same card instead of redirecting to the
+dashboard, so the address in the bar is the one the visitor asked for. A sleeping workspace is
+woken at once. The card polls its status and, when the workspace is ready, reloads the page, so the
+visitor lands where they meant to go, query string included.
+
+- Only browser navigations see it: a `GET` that accepts `text/html`, is not an `XMLHttpRequest`
+  and, when the browser says, has `Sec-Fetch-Mode: navigate`. API calls, assets and other methods
+  behave as before.
+- The preview origin also serves the workspace's own app, so the card is deliberately small. Its
+  endpoints are `GET /__workspaces/status` and `POST /__workspaces/start|prepare|restart|resume`.
+  The prefix is reserved: any other path under it answers `404`, and it is never forwarded to the
+  app. Settings, environment, secrets, logs and removal are not reachable from it.
+- The posts accept only the workspace's own preview origin (the `Origin`, or `Referer`, must match
+  `ws-<id>…`); the shared dashboard origin and other workspaces are refused. After a post the
+  visitor returns to the page they were on.
+- The status payload carries no logs, steps, environment values or error text. A failure reads
+  "Setup failed. Open settings for the full log.", with the gear and link going to the shared
+  settings page.
+- Polling the card is not preview traffic, so it never keeps a workspace awake.
 
 ### Re-running part of a run
 

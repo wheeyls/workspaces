@@ -74,6 +74,14 @@ module Workspaces
                  })
     end
 
+    # Applies one named preset (see EnvironmentOverrides#apply_preset) and starts the workspace,
+    # restarting it if it is already up.
+    def apply_environment_preset(id, name:)
+      restart = Backend.new(id).running? || sleeping?(id)
+      launch(id, restart: restart, force: true,
+                 prelaunch: ->(_workspace) { EnvironmentOverrides.new(id).apply_preset(name) })
+    end
+
     def replace_editable_environment(id, text:)
       restart = Backend.new(id).running? || sleeping?(id)
       launch(id, restart: restart, force: true,

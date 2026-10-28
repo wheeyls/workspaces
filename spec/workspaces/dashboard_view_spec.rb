@@ -288,15 +288,69 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('Delete workspace')
   end
 
-  it 'shows a read-only inventory with explicit running state and timestamps' do
+  it 'shows a read-only inventory with the status as a word, short UTC times and the full value kept' do
     html = described_class.index([
       snapshot.merge('id' => 'agent-123', 'created_at' => '2026-10-01T11:00:00Z',
                      'started_at' => '2026-10-01T12:00:00Z', 'status' => 'ready', 'running' => true),
       snapshot.merge('id' => 'agent-456', 'status' => 'error', 'running' => false)
     ])
 
-    expect(html).to include('Running', 'Not running', '2026-10-01T11:00:00Z', '2026-10-01T12:00:00Z')
-    expect(html).not_to include('<script>alert(1)</script>', '/workspaces/agent-123/remove')
+    expect(html).to include('>Ready</span>', '>Error</span>', 'Oct 1, 11:00', 'Oct 1, 12:00')
+    expect(html).to include('datetime="2026-10-01T11:00:00Z" title="2026-10-01T11:00:00Z"')
+    expect(html).not_to include('Not running', 'Running ·', '<script>alert(1)</script>', '/workspaces/agent-123/remove')
+  end
+
+  describe 'inventory page' do
+    def index(rows)
+      described_class.index(rows.map { |row| snapshot.merge('running' => false).merge(row) })
+    end
+
+    it 'counts the worktrees and the running ones from the data' do
+      expect(index([{ 'id' => 'a' }, { 'id' => 'b' }])).to include('2 managed worktrees · none running')
+      expect(index([{ 'id' => 'a', 'running' => true }, { 'id' => 'b' }])).to include('2 managed worktrees · 1 running')
+      expect(index([{ 'id' => 'a' }])).to include('1 managed worktree · none running')
+      expect(index([])).to include('0 managed worktrees · none running')
+    end
+
+    it 'labels the time columns as UTC and wraps the table so a narrow screen scrolls it' do
+      html = index([{ 'id' => 'a' }])
+
+      expect(html).to include('Created (UTC)', 'Last startup (UTC)', '<div class="table-scroll">')
+    end
+
+    it 'renders a missing start as Never and a missing creation time as Unavailable, without a time element' do
+      html = index([{ 'id' => 'a', 'created_at' => nil, 'started_at' => nil }])
+
+      expect(html).to include('<span class="never">Never</span>', '<span class="never">Unavailable</span>')
+    end
+
+    it 'shows a value that is not a timestamp as it came, escaped' do
+      html = index([{ 'id' => 'a', 'created_at' => '<b>soon</b>' }])
+
+      expect(html).to include('&lt;b&gt;soon&lt;/b&gt;')
+      expect(html).not_to include('<b>soon</b>')
+    end
+
+    it 'marks a busy workspace in text, not only by the pulsing dot' do
+      html = index([{ 'id' => 'a', 'status' => 'preparing', 'active' => true }])
+
+      expect(html).to include('data-status="preparing" data-busy="true"', 'Preparing (busy)')
+    end
+
+    it 'gives every field a real label, and the form a real submit button' do
+      html = index([])
+
+      %w(branch pr new_branch from).each do |name|
+        id = html[/<input id="([^"]+)" name="#{name}"/, 1]
+        expect(id).not_to be_nil
+        expect(html).to include("<label for=\"#{id}\">")
+      end
+      expect(html).to include('<button type="submit" class="button button--primary">Create workspace</button>')
+    end
+
+    it 'uses the shorter intro copy' do
+      expect(index([])).to include('Pick an existing branch, a PR number, or a new branch. Each submission creates its own managed worktree.')
+    end
   end
 
   it 'lists workspaces in a table keyed by ID without repeating the branch' do

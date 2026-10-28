@@ -1,0 +1,42 @@
+<main class="card-page" id="workspace" data-id="<%= @id %>" data-base="<%= action_base %>" data-reload-when-ready="<%= @preview ? 'true' : 'false' %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>" data-disclosure-state="<%= escape(@presentation['state']) %>">
+  <section class="card" aria-labelledby="status">
+    <header class="card__header">
+      <p class="card__name"><span class="eyebrow">Workspace</span><span class="card__id"><%= @id %></span></p>
+      <a class="icon-link" href="<%= escape(settings_href) %>" aria-label="Settings and details" title="Settings and details"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M10.52 5.57L10.69 2.69L13.31 2.69L13.48 5.57A6.6 6.6 0 0 1 15.50 6.40L17.66 4.49L19.51 6.34L17.60 8.50A6.6 6.6 0 0 1 18.43 10.52L21.31 10.69L21.31 13.31L18.43 13.48A6.6 6.6 0 0 1 17.60 15.50L19.51 17.66L17.66 19.51L15.50 17.60A6.6 6.6 0 0 1 13.48 18.43L13.31 21.31L10.69 21.31L10.52 18.43A6.6 6.6 0 0 1 8.50 17.60L6.34 19.51L4.49 17.66L6.40 15.50A6.6 6.6 0 0 1 5.57 13.48L2.69 13.31L2.69 10.69L5.57 10.52A6.6 6.6 0 0 1 6.40 8.50L4.49 6.34L6.34 4.49L8.50 6.40A6.6 6.6 0 0 1 10.52 5.57ZM9.20 12.00a2.8 2.8 0 1 0 5.6 0a2.8 2.8 0 1 0 -5.6 0Z"/></svg></a>
+    </header>
+    <div class="card__text">
+      <h1 id="status" role="status"><%= escape(@presentation['headline']) %></h1>
+      <p id="summary" class="card__summary"><%= escape(@presentation['summary']) %></p>
+      <p><span class="badge" id="environment-preset-badge" <%= 'hidden' unless @presentation['current_preset'] %>><%= escape(preset_badge_text) %></span></p>
+    </div>
+    <div class="build-progress" id="build-progress" <%= 'hidden' unless @presentation['progress'] %>>
+      <div class="progress-bar" id="progress-bar" role="progressbar" aria-label="Setup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= progress_percent %>" aria-valuetext="<%= escape(progress_valuetext) %>" data-slow="<%= @presentation.dig('progress', 'slow') ? 'true' : 'false' %>"><span class="progress-bar__fill" id="progress-fill" style="inline-size: <%= progress_percent %>%"></span></div>
+      <div class="progress-meta">
+        <p class="progress-meta__step"><span class="activity-dot" aria-hidden="true"></span><span id="progress-step"><%= escape(progress_step_text) %></span></p>
+        <p class="progress-meta__time muted"><span id="progress-percent"><%= progress_percent %>%</span><span aria-hidden="true"> · </span><span id="elapsed"><%= escape(progress_elapsed_text) %></span><span id="progress-eta"><%= escape(progress_eta_suffix) %></span></p>
+      </div>
+    </div>
+    <form method="post" action="<%= start_form_action %>" class="card__start stack stack--snug lead__action" data-only-state="idle" <%= 'hidden' unless @presentation['state'] == 'idle' %>>
+      <% unless environment_presets.empty? %>
+        <label class="field" for="card-preset">Preset
+          <select id="card-preset" name="preset">
+            <% environment_presets.each_key do |name| %><option value="<%= escape(name) %>"><%= escape(name) %></option><% end %>
+            <option value="">Defaults</option>
+          </select>
+        </label>
+      <% end %>
+      <button class="button button--primary button--large"><%= escape(@presentation['environment_submit']) %></button>
+    </form>
+    <div class="card__actions">
+      <a id="preview" class="button button--primary button--large" href="<%= escape(Config.preview_url(@id)) %>" <%= 'hidden' unless @presentation['ready'] %> target="_blank" rel="noopener noreferrer">Open workspace</a>
+      <div id="lead-action" class="lead__action"><%= lead_action_form(@presentation['lead_action']) %></div>
+    </div>
+    <p id="sleep-note" class="muted" <%= 'hidden' if sleep_note.empty? %>><%= escape(sleep_note) %></p>
+    <section class="error-panel setup-error" id="error-panel" role="alert" <%= 'hidden' unless @presentation['error'] %>>
+      <h2>What went wrong</h2><pre id="error"><%= escape(@presentation['error']) %></pre>
+      <a href="<%= escape(settings_href) %>">Open the full log</a>
+    </section>
+    <p id="connection" role="status"></p>
+  </section>
+  <noscript><a href="<%= @preview ? '' : "/workspaces/#{@id}" %>">Refresh status</a></noscript>
+</main>

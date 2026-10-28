@@ -62,7 +62,7 @@ RSpec.describe Workspaces::FrontDoor do
 
     status, _, body = request('/workspaces')
     expect(status).to eq(200)
-    expect(body.join).to include(id, 'Running · ready', '2026-10-01T12:00:00Z', workspace.metadata['created_at'])
+    expect(body.join).to include(id, '>Ready</span>', 'Oct 1, 12:00', 'title="2026-10-01T12:00:00Z"', '1 managed worktree · 1 running')
     expect(workspace).to exist
   end
 
