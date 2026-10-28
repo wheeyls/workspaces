@@ -6,7 +6,7 @@ require 'json'
 # The card has only a few of the page's elements. This runs app.js against exactly that set, to check
 # the polling script does not assume the settings page's controls exist.
 RSpec.describe 'card page script' do
-  def run_card(polls)
+  def run_card(polls, reload_when_ready: false, base: nil, full: false)
     script = <<~'NODE'
       const fs = require('node:fs');
       const vm = require('node:vm');
@@ -33,7 +33,9 @@ RSpec.describe 'card page script' do
         : sel === '[data-section]' ? 'section' in n.dataset : false);
       const byId = {};
       const mk = (tag, id, o = {}) => { const n = new Node(tag, { id, ...o }); byId[id] = n; return n; };
-      const root = mk('main', 'workspace', { dataset: { id: 'ws-1', busy: 'false' } });
+      const root = mk('main', 'workspace', { dataset: { id: 'ws-1', busy: 'false',
+        base: input.base, reloadWhenReady: input.reload ? 'true' : 'false' } });
+      let reloads = 0;
       const start = new Node('form', { dataset: { onlyState: 'idle' } });
       const kids = [mk('h1', 'status'), mk('p', 'summary'), mk('span', 'environment-preset-badge', { hidden: true }),
         mk('div', 'build-progress', { hidden: true }), mk('div', 'progress-bar'), mk('span', 'progress-fill'),
@@ -42,12 +44,13 @@ RSpec.describe 'card page script' do
         mk('p', 'sleep-note', { hidden: true }), mk('pre', 'error'), mk('section', 'error-panel', { hidden: true }),
         mk('p', 'connection'), start];
       root.append(...kids);
+      const fetched = [];
       const timers = []; const responses = input.polls.slice();
       const context = {
         document: { getElementById: (id) => byId[id] || null, createElement: (t) => new Node(t), activeElement: null },
-        window: { location: { search: '', pathname: '/workspaces/ws-1' } },
+        window: { location: { search: '', pathname: '/workspaces/ws-1', reload() { reloads += 1; } } },
         URLSearchParams: class { get() { return null; } },
-        fetch: () => Promise.resolve({ ok: true, json: async () => responses.shift() }),
+        fetch: (url) => { fetched.push(url); return Promise.resolve({ ok: true, json: async () => responses.shift() }); },
         AbortController: class { constructor() { this.signal = {}; } abort() {} },
         setTimeout(cb, d) { timers.push({ cb, d }); return timers.length; }, clearTimeout() {},
         Date, JSON, Math, Number, console
@@ -65,13 +68,14 @@ RSpec.describe 'card page script' do
             errorHidden: byId['error-panel'].hidden, error: byId.error.textContent,
             lead: byId['lead-action'].children[0] ? byId['lead-action'].children[0].action : null });
         }
-        process.stdout.write(JSON.stringify(snaps));
+        process.stdout.write(JSON.stringify({ snaps, reloads, fetched }));
       })();
     NODE
-    out, status = Open3.capture2('node', '-e', script, JSON.generate(polls: polls))
+    out, status = Open3.capture2('node', '-e', script, JSON.generate(polls: polls, reload: reload_when_ready, base: base))
     raise "node failed: #{out}" unless status.success?
 
-    JSON.parse(out)
+    result = JSON.parse(out)
+    full ? result : result['snaps']
   end
 
   def poll(state, extra = {})
@@ -99,5 +103,38 @@ RSpec.describe 'card page script' do
 
     expect(snap).to include('badge' => 'Preset: marketplace', 'badgeHidden' => false, 'errorHidden' => false,
                             'error' => 'bundle failed', 'lead' => '/workspaces/ws-1/start')
+  end
+
+  describe 'on a preview host' do
+    it 'reloads the page once, and only when the workspace becomes ready' do
+      result = run_card([poll('busy'), poll('ready'), poll('ready')], reload_when_ready: true,
+                                                                       base: '/__workspaces', full: true)
+
+      expect(result['reloads']).to eq(1)
+    end
+
+    it 'polls its own reserved status endpoint, not the shared dashboard' do
+      result = run_card([poll('busy')], reload_when_ready: true, base: '/__workspaces', full: true)
+
+      expect(result['fetched'].first).to start_with('/__workspaces/status')
+    end
+
+    it 'never reloads a card that is not standing in for a page' do
+      result = run_card([poll('busy'), poll('ready')], reload_when_ready: false, full: true)
+
+      expect(result['reloads']).to eq(0)
+    end
+
+    it 'works against the real slimmed status payload, which has no actions, steps or logs' do
+      snapshot = { 'workspace_id' => 'ws-1', 'status' => 'ready', 'active' => false, 'sleep_after_seconds' => 600,
+                   'prepare_started_at' => '2026-10-05T00:00:00Z', 'completed_at' => '2026-10-05T00:01:00Z' }
+      payload = Workspaces::DashboardView.preview_status(snapshot)
+
+      expect(payload['presentation']).not_to include('actions', 'steps')
+      result = run_card([payload], reload_when_ready: true, base: '/__workspaces', full: true)
+
+      expect(result['snaps'].first).to include('connection' => '', 'previewHidden' => false)
+      expect(result['reloads']).to eq(1)
+    end
   end
 end

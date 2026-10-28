@@ -31,8 +31,20 @@ module Workspaces
 
     # The default page for a workspace: one small card with the headline, progress and the single
     # next action. Everything else lives on the settings page.
-    def self.card(snapshot)
-      new(snapshot).render_card
+    def self.card(snapshot, preview: false)
+      new(snapshot, preview: preview).render_card
+    end
+
+    PREVIEW_STATUS_KEYS = %w(state busy ready headline summary progress lead_action current_preset sleep open).freeze
+    PREVIEW_ERROR = 'Setup failed. Open settings for the full log.'.freeze
+
+    # What the card polls for on a preview host, where the workspace's own pages share the origin.
+    # Only what the card draws: no log, no steps, no environment and no error text.
+    def self.preview_status(snapshot)
+      view = Presentation.new(snapshot).to_h
+      slim = view.slice(*PREVIEW_STATUS_KEYS).merge('error' => view['error'] ? PREVIEW_ERROR : '')
+      { 'presentation' => slim, 'prepare_started_at' => snapshot['prepare_started_at'],
+        'completed_at' => snapshot['completed_at'] }
     end
 
     def self.pull_request(number, workspaces)
@@ -57,8 +69,9 @@ module Workspaces
       SVG
     end
 
-    def initialize(snapshot)
+    def initialize(snapshot, preview: false)
       @snapshot = snapshot
+      @preview = preview
       @presentation = Presentation.new(snapshot).to_h
     end
 
@@ -69,8 +82,12 @@ module Workspaces
                                  encoding: 'UTF-8')).result(binding))
     end
 
+    # On a preview host the card is served from the workspace's own origin, so its controls go to the
+    # front door's reserved /__workspaces/ endpoints, it never shows error text, and it reloads the
+    # page the visitor asked for once the workspace is ready.
     def render_card
       @id = Config.validate_id!(@snapshot.fetch('workspace_id'))
+      @presentation = @presentation.merge('error' => PREVIEW_ERROR) if @preview && @presentation['error']
       document("Workspace #{@id}",
                ERB.new(File.read(File.join(__dir__, 'dashboard/card.html.erb'),
                                  encoding: 'UTF-8')).result(binding))
@@ -238,8 +255,24 @@ module Workspaces
     def lead_action_form(action)
       return '' unless action && action['kind'] == 'post'
 
-      "<form method=\"post\" action=\"/workspaces/#{@id}/#{action.fetch('key')}\">" \
+      "<form method=\"post\" action=\"#{action_base}/#{action.fetch('key')}\">" \
         "<button class=\"button button--primary button--large\">#{escape(action.fetch('label'))}</button></form>"
+    end
+
+    def action_base
+      @preview ? '/__workspaces' : "/workspaces/#{@id}"
+    end
+
+    def settings_href
+      @preview ? Config.settings_url(@id) : "/workspaces/#{@id}/settings"
+    end
+
+    # Where the card's start form posts. A shared card with presets saves the chosen one through the
+    # environment form; a preview card starts through its own origin.
+    def start_form_action
+      return "#{action_base}/start" if @preview || environment_presets.empty?
+
+      "/workspaces/#{@id}/environment"
     end
 
     def action_form(action)
