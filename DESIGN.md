@@ -8,26 +8,22 @@ GET is read-only. All creation and lifecycle controls submit same-origin POST fo
 
 ## Visual direction
 
-Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear status affordances, and no decorative animation.
+Restrained tooling UI: a near-black page, one slightly lighter card surface with a hairline border and no shadow, a compact spacing rhythm, clear status affordances, and no decorative animation. Every text pairing is at least 4.5:1 against its surface.
 
 ## Tokens used
 
 ### Color
 
-- `--bg`: shell background
-- `--bg-elevated`: panel surface
-- `--border`: panel/control borders
-- `--text`: primary text
-- `--muted`: secondary/supporting text
-- `--accent`: active status and primary action
-- `--success`: completed/ready states
-- `--danger`: failed/error states
-- `--warning`: retry/connection warning text
+- `--bg` `#0b0f17`: page. `--bg-elevated` `#141a26`: card surface. `--border` `#2a3447`: card edge. `--divider` `#252e41`: row dividers. `--border-strong` `#3f4b63`: the table header rule.
+- `--control-border`: the edge of inputs, outline buttons and tabs. Currently `#3f4b63`, about 2:1 against the card. WCAG 1.4.11 asks 3:1 for a control's boundary, so this is a known shortfall, kept to match the design handoff; `#5b6b8a` or lighter reaches 3:1. It is one token, so changing it is a one-line edit.
+- Text: `--text-strong` `#f8fafc` (headings, workspace names, input values), `--text` `#e2e8f0` (body), `--text-cell` `#cbd5e1` (table cells, logs), `--muted` `#a8b3c7` (secondary), `--placeholder` `#8a97ad`.
+- `--accent` `#6fa8ff` with `--on-accent` `#06101f` text on buttons; `--accent-hover` `#8dbbff` for link and button hover. `--success`, `--danger` and `--warning` are unchanged.
+- **Status pills** take three custom properties, `--pill-bg`, `--pill-text` and `--pill-dot`, set per `data-status`. Sleeping indigo, idle amber and stopped red come from the handoff. Ready green, preparing cyan, error deeper red and interrupted orange were chosen to the same contrast (text 8:1 or better, dot 3:1 or better). Any other status gets the neutral slate pair.
 
 ### Radius and depth
 
-- `--radius`: 12px panel corners
-- `--shadow`: single elevated panel shadow
+- `--radius`: 12px panel corners. `--radius-control`: 8px for inputs, buttons and tabs. `--control-height`: 44px.
+- `--shadow`: none. Panels are separated by their border alone.
 
 ### Spacing scale
 
@@ -35,14 +31,15 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 
 ### Typography
 
-- System sans stack for body/content
-- System mono stack for logs/error text
+- Interface: Inter (`--font-sans`) at 15px body, 14px labels at 600, h1 32px at 700, panel h2 20px at 600, table column headers 12px at 600 uppercase with 0.06em tracking.
+- Workspace names, input values and logs: JetBrains Mono (`--font-mono`), 14px. Both stacks fall back to system fonts, because nothing is loaded from the network.
+- Timestamps use `font-variant-numeric: tabular-nums`.
 
 ## Component primitives
 
-- **Creation form**: labelled branch, PR, and new-branch inputs with a primary create action
-- **Workspace inventory**: one row per managed workspace with a status distinct from backend running state, creation and last startup times, and a link to its detail page. Unknown timestamps are shown as unavailable, not inferred from recent setup.
-- **Status pill**: current workspace status as text
+- **Creation form**: four labelled fields in one wrapping row (`flex: 1 1 220px`, 16px gap), each with a real `<label for>`, then a `type="submit"` button on its own line.
+- **Workspace inventory**: a centered column up to 1180px. The page header carries "N managed worktrees · none running" (or "· K running"), counted from the data. The table sits in an `overflow-x: auto` wrapper with `min-width: 820px`, so a phone scrolls it sideways instead of cramming or hiding columns. Rows have 16px padding; workspace names are monospaced links with no underline until hover. Times read "Oct 27, 10:48", are UTC (the headers say so) and keep the full ISO value in a `title`. A missing start reads "Never" and a missing creation time "Unavailable", in the muted colour.
+- **Status pill**: a dot and one word (13px, 600, fully rounded), never colour alone. A busy workspace adds "(busy)" and pulses its dot, which stops under reduced motion.
 - **Setup progress**: names and ordered states come from repository run steps; failures are highlighted. Restart shows the background launch and later readiness commands.
 - **Actions by state**: idle/stopped offers Start; active operations show progress without lifecycle buttons; failure offers Retry; ready offers Open workspace plus rebuild/restart/stop.
 - **PR source update**: a secondary Update from PR form only for PR-sourced workspaces; it fetches the latest PR head, fast-forwards the checkout, and preserves local edits without rebuilding or restarting. A persistent result message explains when rebuild is needed or when a retained stash needs manual recovery.
@@ -93,6 +90,6 @@ Restrained tooling UI: dark elevated panels, compact spacing rhythm, clear statu
 
 ## Responsive behavior
 
-- Single-column layout with intrinsic grid sections
-- Panel padding compresses at <=640px
-- No horizontal scrolling expected at 375px viewport
+- Single-column layout with intrinsic grid sections; panel padding is 28px and compresses to 20px at <=640px
+- The workspace table is the one deliberate exception to "no horizontal scrolling": it keeps its columns and scrolls inside its own wrapper, rather than stacking rows and hiding the dates
+- Everything else fits a 375px viewport

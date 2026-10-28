@@ -1,5 +1,6 @@
 require 'erb'
 require 'json'
+require 'time'
 require_relative 'config'
 require_relative 'presentation'
 require_relative 'duration_format'
@@ -13,17 +14,19 @@ module Workspaces
     def self.index(workspaces)
       view = new({})
       view.document('Workspaces', <<~HTML)
-        <main class="dashboard"><header class="dashboard__header"><h1>Workspaces</h1></header>
-        <section class="status-panel"><h2>Create workspace</h2>
-        <p>Choose a branch, PR number, or new branch. Every submission creates a separate managed worktree.</p>
+        <main class="dashboard"><header class="dashboard__header"><h1>Workspaces</h1><p class="dashboard__note">#{view.inventory_summary(workspaces)}</p></header>
+        <section class="status-panel" aria-labelledby="create-heading"><h2 id="create-heading">Create workspace</h2>
+        <p>Pick an existing branch, a PR number, or a new branch. Each submission creates its own managed worktree.</p>
         <form method="post" action="/workspaces/create" class="stack">
-          <label class="field">Existing branch <input name="branch" placeholder="main"></label>
-          <label class="field">PR number <input name="pr" inputmode="numeric" placeholder="43828"></label>
-          <label class="field">New branch <input name="new_branch" placeholder="agent/fix-checkout"></label>
-          <label class="field">Start new branch from <input name="from" placeholder="HEAD"></label>
-          <button class="button button--primary">Create workspace</button>
+          <div class="create-fields">
+            <div class="field"><label for="create-branch">Existing branch</label><input id="create-branch" name="branch" placeholder="main" autocomplete="off" spellcheck="false"></div>
+            <div class="field"><label for="create-pr">PR number</label><input id="create-pr" name="pr" inputmode="numeric" placeholder="43828" autocomplete="off"></div>
+            <div class="field"><label for="create-new-branch">New branch</label><input id="create-new-branch" name="new_branch" placeholder="agent/fix-checkout" autocomplete="off" spellcheck="false"></div>
+            <div class="field"><label for="create-from">Start new branch from</label><input id="create-from" name="from" placeholder="HEAD" autocomplete="off" spellcheck="false"></div>
+          </div>
+          <button type="submit" class="button button--primary">Create workspace</button>
         </form></section>
-        <section class="status-panel"><h2>Managed workspaces</h2>
+        <section class="status-panel" aria-labelledby="inventory-heading"><h2 id="inventory-heading">Managed workspaces</h2>
         #{view.inventory_table(workspaces)}
         </section></main>
       HTML
@@ -128,25 +131,56 @@ module Workspaces
       return '<p class="muted">No workspaces yet.</p>' if workspaces.empty?
 
       <<~HTML
+        <div class="table-scroll">
         <table class="workspace-table">
-          <thead><tr><th scope="col">Workspace</th><th scope="col">Status</th><th scope="col" class="workspace-table__date">Created</th><th scope="col" class="workspace-table__date">Last startup</th></tr></thead>
+          <thead><tr><th scope="col">Workspace</th><th scope="col">Status</th><th scope="col" class="workspace-table__date">Created (UTC)</th><th scope="col" class="workspace-table__date">Last startup (UTC)</th></tr></thead>
           <tbody>
         #{workspaces.map { |workspace| inventory_row(workspace) }.join}
           </tbody>
         </table>
+        </div>
       HTML
+    end
+
+    # "8 managed worktrees · none running", counted from the data on the page.
+    def inventory_summary(workspaces)
+      total = workspaces.length
+      running = workspaces.count { |workspace| workspace['running'] }
+      noun = total == 1 ? 'managed worktree' : 'managed worktrees'
+      "#{total} #{noun} · #{running.zero? ? 'none running' : "#{running} running"}"
+    end
+
+    # "Oct 27, 10:48" in UTC, with the full value kept in the title. Anything that is not a timestamp is
+    # shown as it came rather than guessed at.
+    def short_time(value)
+      Time.iso8601(value.to_s).utc.strftime('%b %-d, %H:%M')
+    rescue ArgumentError
+      value.to_s
+    end
+
+    def time_cell(value, empty)
+      return "<span class=\"never\">#{empty}</span>" if value.nil? || value.to_s.empty?
+
+      "<time datetime=\"#{escape(value)}\" title=\"#{escape(value)}\">#{escape(short_time(value))}</time>"
+    end
+
+    # The word shown in a status pill. What the workspace is doing is the word; whether a server is
+    # up is the dot's job elsewhere, so there is no repeated "Not running ·" prefix.
+    def status_text(workspace)
+      status = (workspace['status'] || 'idle').to_s
+      status = status.capitalize
+      workspace['active'] ? "#{status} (busy)" : status
     end
 
     def inventory_row(workspace)
       id = escape(Config.validate_id!(workspace.fetch('id')))
       status = escape(workspace['status'] || 'idle')
-      running = workspace['running'] ? 'Running' : 'Not running'
       <<~HTML
         <tr>
           <th scope="row"><a href="/workspaces/#{id}">#{id}</a></th>
-          <td><span class="status-pill" data-status="#{status}"><span class="status-dot" aria-hidden="true"></span>#{running} · #{status}#{workspace['active'] ? ' (busy)' : ''}</span></td>
-          <td class="workspace-table__date"><time datetime="#{escape(workspace['created_at'])}">#{escape(workspace['created_at'] || 'Unavailable')}</time></td>
-          <td class="workspace-table__date"><time datetime="#{escape(workspace['started_at'])}">#{escape(workspace['started_at'] || 'Never')}</time></td>
+          <td><span class="status-pill" data-status="#{status}" data-busy="#{workspace['active'] ? 'true' : 'false'}"><span class="status-dot" aria-hidden="true"></span>#{escape(status_text(workspace))}</span></td>
+          <td class="workspace-table__date">#{time_cell(workspace['created_at'], 'Unavailable')}</td>
+          <td class="workspace-table__date">#{time_cell(workspace['started_at'], 'Never')}</td>
         </tr>
       HTML
     end
