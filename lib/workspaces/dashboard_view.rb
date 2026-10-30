@@ -135,11 +135,29 @@ module Workspaces
         <table class="workspace-table">
           <thead><tr><th scope="col">Workspace</th><th scope="col">Status</th><th scope="col" class="workspace-table__date">Created (UTC)</th><th scope="col" class="workspace-table__date">Last startup (UTC)</th></tr></thead>
           <tbody>
-        #{workspaces.map { |workspace| inventory_row(workspace) }.join}
+        #{by_last_startup(workspaces).map { |workspace| inventory_row(workspace) }.join}
           </tbody>
         </table>
         </div>
       HTML
+    end
+
+    # Most recently started first; workspaces that have never started (or whose start time cannot be read)
+    # come last. Moments are compared as moments, not as text, so a different UTC offset or fraction cannot
+    # misorder rows, and ties fall back to the id so the list never shuffles between loads.
+    def by_last_startup(workspaces)
+      workspaces.sort_by do |workspace|
+        started = startup_moment(workspace['started_at'])
+        [started ? 0 : 1, started ? -started.to_r : 0, workspace['id'].to_s]
+      end
+    end
+
+    def startup_moment(value)
+      return nil if value.nil? || value.to_s.empty?
+
+      Time.iso8601(value.to_s)
+    rescue ArgumentError
+      nil
     end
 
     # "8 managed worktrees · none running", counted from the data on the page.

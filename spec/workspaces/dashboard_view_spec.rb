@@ -305,6 +305,46 @@ RSpec.describe Workspaces::DashboardView do
       described_class.index(rows.map { |row| snapshot.merge('running' => false).merge(row) })
     end
 
+    it 'lists the most recently started workspace first, and the never-started ones last' do
+      html = index([
+        { 'id' => 'older', 'started_at' => '2026-10-01T09:00:00Z' },
+        { 'id' => 'never-b' },
+        { 'id' => 'newest', 'started_at' => '2026-10-03T09:00:00Z' },
+        { 'id' => 'middle', 'started_at' => '2026-10-02T09:00:00Z' },
+        { 'id' => 'never-a', 'started_at' => nil }
+      ])
+
+      order = html.scan(%r{<th scope="row"><a href="/workspaces/([^"]+)"}).flatten
+      expect(order).to eq(%w(newest middle older never-a never-b))
+    end
+
+    it 'puts workspaces started at the same moment in id order, so the list does not shuffle' do
+      html = index([
+        { 'id' => 'b', 'started_at' => '2026-10-01T09:00:00Z' },
+        { 'id' => 'a', 'started_at' => '2026-10-01T09:00:00Z' }
+      ])
+
+      expect(html.scan(%r{<th scope="row"><a href="/workspaces/([^"]+)"}).flatten).to eq(%w(a b))
+    end
+
+    it 'compares moments, not text, so a different UTC offset or fraction cannot misorder rows' do
+      html = index([
+        { 'id' => 'earlier', 'started_at' => '2026-10-01T10:00:00+02:00' },
+        { 'id' => 'later', 'started_at' => '2026-10-01T09:00:00Z' }
+      ])
+
+      expect(html.scan(%r{<th scope="row"><a href="/workspaces/([^"]+)"}).flatten).to eq(%w(later earlier))
+    end
+
+    it 'treats a start time it cannot read as never started, and still renders every row' do
+      html = index([
+        { 'id' => 'readable', 'started_at' => '2026-10-01T09:00:00Z' },
+        { 'id' => 'garbled', 'started_at' => 'not a time' }
+      ])
+
+      expect(html.scan(%r{<th scope="row"><a href="/workspaces/([^"]+)"}).flatten).to eq(%w(readable garbled))
+    end
+
     it 'counts the worktrees and the running ones from the data' do
       expect(index([{ 'id' => 'a' }, { 'id' => 'b' }])).to include('2 managed worktrees · none running')
       expect(index([{ 'id' => 'a', 'running' => true }, { 'id' => 'b' }])).to include('2 managed worktrees · 1 running')
