@@ -2,8 +2,8 @@ require_relative 'spec_helper'
 require 'json'
 
 # Drives app.js against a tiny fake DOM to check what the polling script does when the
-# workspace changes state: re-render the friendly lead, swap the lead action, and open
-# the right disclosure, without a page reload.
+# workspace changes state: re-render the friendly lead and swap the lead action without a
+# page reload.
 RSpec.describe 'dashboard lead rendering' do
   def run_scenarios(initial_state:, polls:)
     script = <<~'NODE'
@@ -51,7 +51,7 @@ RSpec.describe 'dashboard lead rendering' do
       }
       const document = new Doc();
       const root = document.reg(new Node('main', { id: 'workspace', dataset: {
-        id: 'ws-1', busy: 'false', disclosureState: input.initial } }));
+        id: 'ws-1', busy: 'false' } }));
       const mk = (tag, id, o = {}) => document.reg(new Node(tag, { id, ...o }));
       const status = mk('h2', 'status'), summary = mk('p', 'summary');
       const buildProgress = mk('div', 'build-progress', { hidden: true });
@@ -66,15 +66,13 @@ RSpec.describe 'dashboard lead rendering' do
       const connection = mk('p', 'connection');
       const envTitle = mk('span', 'environment-title');
       const presetBadge = mk('span', 'environment-preset-badge', { hidden: true });
-      const envDisclosure = mk('details', 'environment-disclosure', { dataset: { section: '' } });
-      const techDisclosure = mk('details', 'technical-disclosure', { dataset: { section: '' } });
       const progress = mk('ol', 'progress', { dataset: { section: '' } });
       const actions = mk('div', 'actions', { className: 'workspace-actions' });
       const srcMsg = mk('p', 'source-update-message');
       const log = mk('pre', 'log'); log.clientHeight = 1; log.scrollHeight = 1; log.scrollTop = 0;
       const updated = mk('time', 'updated');
       root.append(status, summary, buildProgress, bar, fill, barStep, barPercent, barEta, activity, elapsed, preview, leadAction, message, error, errorPanel,
-        connection, envTitle, presetBadge, envDisclosure, techDisclosure, progress, actions, srcMsg, log, updated);
+        connection, envTitle, presetBadge, progress, actions, srcMsg, log, updated);
 
       const timers = []; const responses = input.polls.slice();
       const context = {
@@ -103,7 +101,6 @@ RSpec.describe 'dashboard lead rendering' do
             leadAction: leadAction.children[0] ? { action: leadAction.children[0].action,
               label: leadAction.children[0].children[0].textContent,
               klass: leadAction.children[0].children[0].className } : null,
-            envOpen: envDisclosure.open, techOpen: techDisclosure.open,
             envTitle: envTitle.textContent,
             badgeHidden: presetBadge.hidden, badgeText: presetBadge.textContent
           });
@@ -122,24 +119,21 @@ RSpec.describe 'dashboard lead rendering' do
                      'steps' => [], 'actions' => [], 'sections' => {},
                      'headline' => "headline for #{state}", 'summary' => "summary for #{state}",
                      'progress' => nil, 'lead_action' => nil, 'environment_title' => 'Change settings',
-                     'environment_submit' => 'Save & restart',
-                     'open' => { 'environment' => false, 'technical' => false } }.merge(extra)
+                     'environment_submit' => 'Save & restart' }.merge(extra)
     { 'presentation' => presentation, 'message' => 'm', 'source_update_message' => '', 'editable_environment' => {},
       'log_source' => 'setup', 'log_tail' => '', 'updated_at' => 'now',
       'prepare_started_at' => '2026-10-05T00:00:00Z', 'completed_at' => '2026-10-05T00:01:00Z' }
   end
 
-  it 'moves from setting up to ready without a reload: new headline, Open button, details stay collapsed' do
-    busy = poll('busy', 'open' => { 'environment' => false, 'technical' => true })
-    ready = poll('ready', 'lead_action' => { 'kind' => 'open', 'label' => 'Open workspace' },
-                          'open' => { 'environment' => false, 'technical' => false })
+  it 'moves from setting up to ready without a reload: new headline and the Open button' do
+    busy = poll('busy')
+    ready = poll('ready', 'lead_action' => { 'kind' => 'open', 'label' => 'Open workspace' })
 
     first, second = run_scenarios(initial_state: 'idle', polls: [busy, ready])
 
-    expect(first).to include('headline' => 'headline for busy', 'previewHidden' => true,
-                             'techOpen' => true, 'envOpen' => false)
+    expect(first).to include('headline' => 'headline for busy', 'previewHidden' => true)
     expect(second).to include('headline' => 'headline for ready', 'barHidden' => true,
-                              'previewHidden' => false, 'techOpen' => false, 'leadAction' => nil)
+                              'previewHidden' => false, 'leadAction' => nil)
   end
 
   it 'draws the progress bar the server computed, marks a slow step, and hides the bar when the run ends' do
@@ -158,23 +152,14 @@ RSpec.describe 'dashboard lead rendering' do
     expect(c).to include('barHidden' => true)
   end
 
-  it 'shows a large retry button and opens technical details when setup fails' do
-    error = poll('error', 'lead_action' => { 'kind' => 'post', 'key' => 'prepare', 'label' => 'Retry setup', 'primary' => true },
-                          'open' => { 'environment' => false, 'technical' => true })
+  it 'shows a large retry button when setup fails' do
+    error = poll('error', 'lead_action' => { 'kind' => 'post', 'key' => 'prepare', 'label' => 'Retry setup', 'primary' => true })
 
     snap, = run_scenarios(initial_state: 'busy', polls: [error])
 
-    expect(snap).to include('techOpen' => true, 'previewHidden' => true)
+    expect(snap).to include('previewHidden' => true)
     expect(snap['leadAction']).to include('action' => '/workspaces/ws-1/prepare', 'label' => 'Retry setup',
                                           'klass' => 'button button--primary button--large')
-  end
-
-  it 'applies a disclosure preference only when the state changes, so a user-opened section stays open on later polls' do
-    ready = poll('ready')
-    snaps = run_scenarios(initial_state: 'ready', polls: [ready, ready])
-
-    expect(snaps.map { |s| s['techOpen'] }).to eq([false, false])
-    expect(snaps.map { |s| s['headline'] }).to eq(['headline for ready', 'headline for ready'])
   end
 
   it 'shows, updates and clears the current preset badge as the settings change, without a reload' do

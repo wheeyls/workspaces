@@ -63,7 +63,7 @@ RSpec.describe 'dashboard step accordions' do
         createElement(t) { return new Node(t); }
       }
       const document = new Doc();
-      const root = document.reg(new Node('main', { id: 'workspace', dataset: { id: 'ws-1', busy: 'false', disclosureState: 'busy' } }));
+      const root = document.reg(new Node('main', { id: 'workspace', dataset: { id: 'ws-1', busy: 'false' } }));
       const mk = (tag, id, o = {}) => document.reg(new Node(tag, { id, ...o }));
       const steps = mk('div', 'steps', { dataset: { stepLogs: '' } });
       const fullLog = mk('details', 'full-log', { dataset: { stepLog: 'full' } });
@@ -82,7 +82,7 @@ RSpec.describe 'dashboard step accordions' do
         steps.insertBefore(details, fullLog);
       });
       const names = ['status', 'summary', 'activity', 'elapsed', 'preview', 'lead-action', 'message',
-        'error', 'error-panel', 'connection', 'environment-title', 'environment-disclosure', 'technical-disclosure',
+        'error', 'error-panel', 'connection', 'environment-title',
         'actions', 'source-update-message', 'updated'];
       names.forEach((n) => root.append(mk('div', n, { hidden: n === 'preview' })));
       const log = mk('pre', 'log', { hidden: true });

@@ -11,12 +11,12 @@ module Workspaces
                 'resume' => 'Retry failed step', 'keep-awake' => 'Keep awake',
                 'allow-sleep' => 'Allow sleep' }.freeze
 
-    # Three layers, from friendly to technical. `lead` is the headline, one sentence and at
-    # most one primary action. `environment` (presets and variables) is the area for
-    # deliberately changing something. `technical` is one disclosure holding setup steps,
-    # logs, workspace details, lifecycle controls and deletion; it is never the first thing
-    # a user reads, but it opens by itself when something needs attention. Setup steps are
-    # not a section of their own: each is an accordion with its own log inside `log`.
+    # The sections of the settings page, from friendly to technical. `lead` is the headline, one
+    # sentence and at most one primary action. `environment` (presets and variables) is the area for
+    # deliberately changing something. `technical` holds setup steps, logs, workspace details,
+    # lifecycle controls and deletion. All of them are plain sections, always open when shown: the
+    # card at /workspaces/ID is what keeps the details out of the way, so this page has nothing to
+    # fold. Setup steps are not a section of their own: each has its own log row inside `log`.
     SECTIONS = %w(lead actions environment technical log details danger).freeze
     TECHNICAL = %w(technical actions log details danger).freeze
 
@@ -32,66 +32,57 @@ module Workspaces
     # `environment_submit` labels the single environment-form button, which saves the
     # settings and (re)starts the workspace, so a brand new workspace needs only that.
     #
-    # Per state: `headline` and `summary` are plain language; `open_environment` and
-    # `open_technical` say which disclosures start expanded. A failure always opens the
-    # technical section so the cause is visible without hunting for it.
+    # Per state: `headline` and `summary` are plain language, `sections` says which sections are
+    # shown, and `environment_submit` / `environment_title` word the settings form.
     STATES = {
       'idle' => {
         sections: %w(lead environment),
         headline: "Let's get your workspace running",
         summary: 'Pick the version of the site you want to preview, then start. Setup usually takes a few minutes.',
-        environment_submit: 'Start workspace', environment_title: 'Choose what to preview',
-        open_environment: true, open_technical: false
+        environment_submit: 'Start workspace', environment_title: 'Choose what to preview'
       },
       'busy' => {
         sections: %w(lead technical log),
         headline: 'Setting things up…',
         summary: 'This page keeps itself up to date. Open the preview once it is ready.',
-        environment_submit: 'Save & restart', environment_title: 'Change settings',
-        open_environment: false, open_technical: true
+        environment_submit: 'Save & restart', environment_title: 'Change settings'
       },
       'ready' => {
         sections: %w(lead environment) + TECHNICAL,
         headline: 'Your workspace is ready',
         summary: 'Everything is set up and running. Open it to see your changes.',
-        environment_submit: 'Save & restart', environment_title: 'Change settings',
-        open_environment: false, open_technical: false
+        environment_submit: 'Save & restart', environment_title: 'Change settings'
       },
       'sleeping' => {
         sections: %w(lead environment) + TECHNICAL,
         headline: 'Your workspace is asleep',
         summary: 'It went quiet, so its server was stopped to free up resources. Your files and data are kept. ' \
                  'Opening the preview wakes it in a few seconds.',
-        environment_submit: 'Save & start', environment_title: 'Change settings',
-        open_environment: false, open_technical: false
+        environment_submit: 'Save & start', environment_title: 'Change settings'
       },
       'stopped' => {
         sections: %w(lead environment) + TECHNICAL,
         headline: 'Your workspace is paused',
         summary: 'Start it again to pick up where you left off.',
-        environment_submit: 'Save & start', environment_title: 'Change settings',
-        open_environment: false, open_technical: false
+        environment_submit: 'Save & start', environment_title: 'Change settings'
       },
       'error' => {
         sections: %w(lead environment) + TECHNICAL,
         headline: "Something didn't go to plan",
         summary: 'Setup stopped before it finished. You can try again, or change settings first.',
-        environment_submit: 'Save & retry', environment_title: 'Change settings',
-        open_environment: false, open_technical: true
+        environment_submit: 'Save & retry', environment_title: 'Change settings'
       },
       'interrupted' => {
         sections: %w(lead environment) + TECHNICAL,
         headline: 'Setup was interrupted',
         summary: 'It stopped before it finished. Try again to pick up from the start.',
-        environment_submit: 'Save & retry', environment_title: 'Change settings',
-        open_environment: false, open_technical: true
+        environment_submit: 'Save & retry', environment_title: 'Change settings'
       },
       'unknown' => {
         sections: %w(lead technical log details),
         headline: 'Workspace status unknown',
         summary: 'Open the technical details to see what the workspace is doing.',
-        environment_submit: 'Save & restart', environment_title: 'Change settings',
-        open_environment: false, open_technical: true
+        environment_submit: 'Save & restart', environment_title: 'Change settings'
       }
     }.freeze
 
@@ -107,8 +98,7 @@ module Workspaces
         'lead_action' => lead_action, 'total' => total, 'progress' => progress,
         'current_preset' => current_preset, 'sleep' => sleep_info,
         'environment_title' => definition[:environment_title],
-        'environment_submit' => definition[:environment_submit],
-        'open' => { 'environment' => definition[:open_environment], 'technical' => definition[:open_technical] } }
+        'environment_submit' => definition[:environment_submit] }
     end
 
     private

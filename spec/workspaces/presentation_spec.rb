@@ -17,7 +17,7 @@ RSpec.describe Workspaces::Presentation do
     expect(view['headline']).to eq("Let's get your workspace running")
     expect(view['summary']).to include('then start')
     expect(view['environment_submit']).to eq('Start workspace')
-    expect(view['open']).to eq('environment' => true, 'technical' => false)
+    expect(view).not_to have_key('open')
     expect(view['lead_action']).to be_nil
     expect(view['actions']).to eq([{ 'key' => 'start', 'label' => 'Start workspace', 'primary' => true }])
   end
@@ -30,7 +30,6 @@ RSpec.describe Workspaces::Presentation do
     expect(visible(view)).to eq(%w(lead technical log))
     expect(view['actions']).to eq([])
     expect(view['lead_action']).to be_nil
-    expect(view['open']).to eq('environment' => false, 'technical' => true)
   end
 
   it 'has a friendly headline while busy, with the detail carried by the progress bar instead' do
@@ -49,14 +48,13 @@ RSpec.describe Workspaces::Presentation do
     expect(visible(view)).to eq(%w(lead technical log))
   end
 
-  it 'leads a ready workspace with one Open button and tucks everything else away' do
+  it 'leads a ready workspace with one Open button and every section available' do
     view = present('status' => 'ready', 'steps' => [{ 'key' => 'a', 'label' => 'A', 'state' => 'complete' }])
 
     expect(view['state']).to eq('ready')
     expect(view['headline']).to eq('Your workspace is ready')
     expect(view['lead_action']).to eq('kind' => 'open', 'label' => 'Open workspace')
     expect(visible(view)).to eq(%w(lead actions environment technical log details danger))
-    expect(view['open']).to eq('environment' => false, 'technical' => false)
     expect(view['environment_submit']).to eq('Save & restart')
     expect(view['ready']).to eq(true)
   end
@@ -125,13 +123,13 @@ RSpec.describe Workspaces::Presentation do
     end
   end
 
-  it 'opens the technical details on a failure so the cause is never hidden, and offers retry up front' do
+  it 'shows the technical section on a failure so the cause is never hidden, and offers retry up front' do
     view = present('status' => 'error', 'operation' => 'restart', 'last_error' => 'boom',
                    'steps' => [{ 'key' => 'a', 'label' => 'A', 'state' => 'failed' }])
 
-    expect(view['open']['technical']).to eq(true)
+    expect(visible(view)).to include('technical', 'log')
     expect(view['lead_action']).to include('kind' => 'post', 'key' => 'restart', 'label' => 'Retry restart')
-    expect(present('status' => 'interrupted')['open']['technical']).to eq(true)
+    expect(visible(present('status' => 'interrupted'))).to include('technical', 'log')
   end
 
   it 'offers Start as the lead action for a stopped workspace' do

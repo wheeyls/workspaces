@@ -25,7 +25,8 @@ RSpec.describe Workspaces::DashboardView do
     expect(hidden.call('lead')).to eq(false)
     expect(hidden.call('environment')).to eq(false)
     expect(html).to include("Let&#39;s get your workspace running", 'Choose what to preview')
-    expect(html).to match(/id="environment-disclosure"[^>]*\sopen/)
+    expect(html).to match(/<section[^>]*id="environment-section"/)
+    expect(html).not_to match(/id="environment-section"[^>]*\shidden/)
     expect(html).to match(/data-env-submit\s*>Start workspace<\/button>/)
   end
 
@@ -265,8 +266,8 @@ RSpec.describe Workspaces::DashboardView do
 
     expect(html).to include('Preview URL', 'http://ws-agent-123.localhost:4747/')
     expect(html).to include('Available when ready', 'Live backend log', '&lt;backend only&gt;')
-    expect(html).to match(/href="\?log=backend" id="backend-tab" data-log-source="backend" aria-current="page"/)
-    expect(html).not_to include('href="?log=setup" data-log-source="setup" aria-current="page"')
+    expect(html).to match(/href="\?log=backend#log-title" id="backend-tab" data-log-source="backend" aria-current="page"/)
+    expect(html).not_to include('href="?log=setup#log-title" data-log-source="setup" aria-current="page"')
     expect(html).to match(/id="steps"[^>]*\shidden/)
     expect(html).to include('aria-label="Web server log"')
     expect(html).to include("'/status?log=' + selectedLog")
@@ -277,7 +278,7 @@ RSpec.describe Workspaces::DashboardView do
   it 'defaults to setup log when no source is supplied' do
     html = described_class.render(snapshot)
 
-    expect(html).to include('Live setup log', 'href="?log=setup" data-log-source="setup" aria-current="page"', 'Setup steps')
+    expect(html).to include('Live setup log', 'href="?log=setup#log-title" data-log-source="setup" aria-current="page"', 'Setup steps')
     expect(html).to include('aria-label="Full setup log"')
   end
 
@@ -421,8 +422,8 @@ RSpec.describe Workspaces::DashboardView do
     html = described_class.render(snapshot.merge('status' => 'ready'))
 
     status_index = html.index('id="status"')
-    settings_index = html.index('id="environment-disclosure"')
-    technical_index = html.index('id="technical-disclosure"')
+    settings_index = html.index('id="environment-section"')
+    technical_index = html.index('id="technical-section"')
     log_index = html.index('id="log-title"')
     danger_index = html.index('Danger Zone')
 
@@ -434,17 +435,17 @@ RSpec.describe Workspaces::DashboardView do
     expect(html).to include('id="actions"', 'id="preview"', 'id="environment-form"', 'id="remove-form"')
   end
 
-  it 'leads a ready workspace with one Open button and keeps the scary parts inside collapsed technical details' do
+  it 'leads a ready workspace with one Open button and shows every section without anything to unfold' do
     steps = [{ 'key' => 'deps', 'label' => 'Install Ruby dependencies', 'state' => 'complete' }]
     html = described_class.render(snapshot.merge('status' => 'ready', 'steps' => steps))
-    technical = html[/<details[^>]*id="technical-disclosure".*<\/main>/m]
+    technical = html[/<section[^>]*id="technical-section".*<\/main>/m]
 
     expect(html).to include('Your workspace is ready')
     expect(html).to match(/id="preview"[^>]*href="http:\/\/ws-agent-123[^"]*"(?![^>]*\shidden)/)
-    expect(html).not_to match(/id="technical-disclosure"[^>]*\sopen/)
-    expect(html).not_to match(/id="environment-disclosure"[^>]*\sopen/)
     expect(technical).to include('Install Ruby dependencies', 'Live setup log', 'Danger Zone')
-    expect(html.index('Install Ruby dependencies')).to be > html.index('id="technical-disclosure"')
+    expect(html.index('Install Ruby dependencies')).to be > html.index('id="technical-section"')
+    expect(html).not_to match(/id="(?:environment|technical)-section"[^>]*\shidden/)
+    expect(html).to include('<h2 id="environment-title">', '<h2 id="technical-title">Technical details</h2>')
   end
 
   describe 'build progress bar' do
@@ -517,13 +518,12 @@ RSpec.describe Workspaces::DashboardView do
       html[/<span class="badge" id="environment-preset-badge"[^>]*>.*?<\/span>/m]
     end
 
-    it 'shows which preset is active in the closed section header' do
+    it 'shows which preset is active in the section heading' do
       html = described_class.render(snapshot.merge('status' => 'ready', 'environment_presets' => presets,
                                                    'editable_environment' => { 'UE_APP' => 'www' }))
 
       expect(badge(html)).to eq('<span class="badge" id="environment-preset-badge" >Preset: www</span>')
-      expect(html).not_to match(/id="environment-disclosure"[^>]*\sopen/)
-      expect(html.index('id="environment-preset-badge"')).to be_between(html.index('id="environment-disclosure"'),
+      expect(html.index('id="environment-preset-badge"')).to be_between(html.index('id="environment-section"'),
                                                                           html.index('id="environment-form"'))
     end
 
@@ -654,12 +654,26 @@ RSpec.describe Workspaces::DashboardView do
     end
   end
 
-  it 'opens the technical details when setup has failed so the cause is visible' do
+  it 'keeps the log tabs on the log: switching source reloads the page, so the links land back on the log heading' do
+    html = described_class.render(snapshot.merge('status' => 'ready', 'backend_log_available' => true))
+
+    expect(html).to include('href="?log=setup#log-title"', 'href="?log=backend#log-title"')
+    expect(html).to include('<h3 id="log-title">')
+  end
+
+  it 'never hides the log tabs behind anything that could fold: no details element wraps them' do
+    html = described_class.render(snapshot.merge('status' => 'ready', 'backend_log_available' => true))
+    around_tabs = html[/\A.*<nav class="log-switch"/m]
+
+    expect(around_tabs.scan('<details').size).to eq(around_tabs.scan('</details').size)
+  end
+
+  it 'shows the technical details when setup has failed so the cause is visible' do
     html = described_class.render(snapshot.merge('status' => 'error', 'operation' => 'prepare',
                                                  'last_error' => 'Build failed'))
 
-    expect(html).to match(/id="technical-disclosure"[^>]*\sopen/)
-    expect(html).to include("Something didn&#39;t go to plan", 'Retry setup')
+    expect(html).not_to match(/id="technical-section"[^>]*\shidden/)
+    expect(html).to include("Something didn&#39;t go to plan", 'Retry setup', 'Build failed')
   end
 
   it 'offers a large Start button as the lead action for a stopped workspace' do

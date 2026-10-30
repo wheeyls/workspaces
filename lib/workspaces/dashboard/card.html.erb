@@ -1,4 +1,4 @@
-<main class="card-page" id="workspace" data-id="<%= @id %>" data-base="<%= action_base %>" data-reload-when-ready="<%= @preview ? 'true' : 'false' %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>" data-disclosure-state="<%= escape(@presentation['state']) %>">
+<main class="card-page" id="workspace" data-id="<%= @id %>" data-base="<%= action_base %>" data-reload-when-ready="<%= @preview ? 'true' : 'false' %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>">
   <section class="card" aria-labelledby="status">
     <header class="card__header">
       <p class="card__name"><span class="eyebrow">Workspace</span><span class="card__id"><%= @id %></span></p>
