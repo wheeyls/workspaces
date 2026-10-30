@@ -1,4 +1,4 @@
-<main class="dashboard" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>" data-disclosure-state="<%= escape(@presentation['state']) %>">
+<main class="dashboard" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>">
   <header class="dashboard__header">
     <div class="dashboard__title"><p class="eyebrow">Managed workspace</p><h1 class="mono-title"><%= @id %></h1></div>
     <div class="header-actions"><a class="button button--subtle" href="/workspaces/<%= @id %>">Back to workspace</a><a class="button button--subtle" href="/workspaces">All workspaces</a></div>
@@ -26,9 +26,9 @@
     </section>
     <p id="connection" role="status"></p>
   </section>
-  <details class="status-panel disclosure" id="environment-disclosure" data-section="environment" <%= 'open' if @presentation.dig('open', 'environment') %> <%= 'hidden' unless section?('environment') %>>
-    <summary><span id="environment-title"><%= escape(@presentation['environment_title']) %></span><span class="badge" id="environment-preset-badge" <%= 'hidden' unless @presentation['current_preset'] %>><%= escape(preset_badge_text) %></span><span class="disclosure__hint">Presets and environment variables</span></summary>
-    <div class="workspace-settings" aria-labelledby="environment-title">
+  <section class="status-panel" id="environment-section" data-section="environment" aria-labelledby="environment-title" <%= 'hidden' unless section?('environment') %>>
+    <header class="section-heading"><h2 id="environment-title"><%= escape(@presentation['environment_title']) %></h2><span class="badge" id="environment-preset-badge" <%= 'hidden' unless @presentation['current_preset'] %>><%= escape(preset_badge_text) %></span><p class="muted">Presets and environment variables</p></header>
+    <div class="workspace-settings">
       <form method="post" action="/workspaces/<%= @id %>/environment" id="environment-form" class="stack" data-environment-form data-environment-presets="<%= escape(environment_presets_json) %>">
         <fieldset class="env-fieldset" data-environment-fieldset <%= 'disabled' if @presentation['busy'] %>>
           <legend class="env-legend">Workspace settings</legend>
@@ -66,9 +66,9 @@
         <p class="muted" id="environment-status" role="status" aria-live="polite"></p>
       </form>
     </div>
-  </details>
-  <details class="status-panel disclosure" id="technical-disclosure" data-section="technical" <%= 'open' if @presentation.dig('open', 'technical') %> <%= 'hidden' unless section?('technical') %>>
-    <summary><span>Technical details</span><span class="disclosure__hint">Setup steps, logs and workspace controls</span></summary>
+  </section>
+  <section class="status-panel" id="technical-section" data-section="technical" aria-labelledby="technical-title" <%= 'hidden' unless section?('technical') %>>
+    <header class="section-heading"><h2 id="technical-title">Technical details</h2><p class="muted">Setup steps, logs and workspace controls</p></header>
     <div class="technical stack stack--loose">
       <div class="workspace-actions-group stack stack--snug" data-section="actions" aria-labelledby="actions-heading" <%= 'hidden' unless section?('actions') %>>
         <h3 id="actions-heading">Workspace controls</h3>
@@ -80,8 +80,8 @@
       <section class="log-panel" data-section="log" aria-labelledby="log-title" <%= 'hidden' unless section?('log') %>>
         <div class="log-header"><h3 id="log-title">Live <%= field('log_source') == 'backend' ? 'backend' : 'setup' %> log</h3><time id="updated"><%= field('updated_at') %></time></div>
         <nav class="log-switch" aria-label="Log source">
-          <a href="?log=setup" data-log-source="setup" <%= 'aria-current="page"' if @snapshot['log_source'] != 'backend' %>>Setup steps</a>
-          <a href="?log=backend" id="backend-tab" data-log-source="backend" <%= 'aria-current="page"' if @snapshot['log_source'] == 'backend' %> <%= 'hidden' unless backend_tab? %>>Web server log</a>
+          <a href="?log=setup#log-title" data-log-source="setup" <%= 'aria-current="page"' if @snapshot['log_source'] != 'backend' %>>Setup steps</a>
+          <a href="?log=backend#log-title" id="backend-tab" data-log-source="backend" <%= 'aria-current="page"' if @snapshot['log_source'] == 'backend' %> <%= 'hidden' unless backend_tab? %>>Web server log</a>
         </nav>
         <div id="steps" class="step-logs" data-step-logs <%= 'hidden' if @snapshot['log_source'] == 'backend' %>>
           <% @presentation['steps'].each do |step| %><%= step_accordion(step) %><% end %>
@@ -107,6 +107,6 @@
         </form>
       </section>
     </div>
-  </details>
+  </section>
   <noscript><a href="/workspaces/<%= @id %>/settings">Refresh status</a></noscript>
 </main>
