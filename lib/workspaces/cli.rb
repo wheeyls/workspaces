@@ -225,19 +225,75 @@ module Workspaces
       raise ArgumentError, "Could not remove: #{result['problems'].join('; ')}" unless result['problems'].empty?
     end
 
+    EXEC_USAGE = 'Usage: workspaces exec ID [--timeout SECONDS] -- COMMAND [ARGUMENTS...]'.freeze
+    # What `timeout(1)` exits with, so scripts that already handle that keep working.
+    EXEC_TIMED_OUT = 124
+
     def execute(argv)
       id = argv.shift
-      unless argv.shift == '--' && !argv.empty?
-        raise ArgumentError,
-              'Usage: workspaces exec ID -- COMMAND [ARGUMENTS...]'
-      end
+      timeout = nil
+      while argv.first && argv.first != '--'
+        flag = argv.shift
+        raise ArgumentError, EXEC_USAGE unless flag == '--timeout' && !argv.empty?
 
-      registry.with_lock(id) do |workspace|
-        child_env = ChildEnv.for_workspace(workspace_path: workspace.path)
-        pid = Process.spawn(child_env, [argv.first, argv.first], *argv.drop(1),
-                            chdir: workspace.path.to_s, unsetenv_others: true)
-        _, status = Process.wait2(pid)
-        status.exitstatus || (128 + status.termsig)
+        timeout = argv.shift
+      end
+      raise ArgumentError, EXEC_USAGE unless argv.shift == '--' && !argv.empty?
+
+      limit = Config.exec_timeout_seconds(timeout)
+      # Only the executable goes in the record: arguments can carry secrets, and the record is readable
+      # by anyone who can read the lock directory.
+      registry.with_lock(id, operation: 'exec', detail: File.basename(argv.first)) do |workspace, lock|
+        run_exec(workspace, argv, limit, lock)
+      end
+    end
+
+    # Runs the command in its own process group so the limit, or a cancel, can stop it and everything it
+    # started, then reports what `timeout(1)` would.
+    def run_exec(workspace, argv, limit, lock)
+      child_env = ChildEnv.for_workspace(workspace_path: workspace.path)
+      pid = Process.spawn(child_env, [argv.first, argv.first], *argv.drop(1),
+                          chdir: workspace.path.to_s, unsetenv_others: true, pgroup: true)
+      lock.update('child_pid' => pid, 'process_group' => pid, 'timeout_seconds' => limit)
+      status = wait_for_exec(pid, limit)
+      return status.exitstatus || (128 + status.termsig) if status
+
+      warn "workspaces exec: #{File.basename(argv.first)} timed out after #{DurationFormat.call(limit)} and was stopped"
+      EXEC_TIMED_OUT
+    end
+
+    # The exit status, or nil when the limit ran out first and the process group was stopped.
+    def wait_for_exec(pid, limit)
+      deadline = limit && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + limit)
+      loop do
+        reaped, status = Process.wait2(pid, Process::WNOHANG)
+        return status if reaped
+
+        if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          stop_group(pid)
+          return nil
+        end
+        sleep 0.05
+      end
+    end
+
+    # TERM first so a command can clean up, KILL for anything still there after a few seconds.
+    def stop_group(pid)
+      Process.kill('TERM', -pid)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+      until Process.wait2(pid, Process::WNOHANG)
+        break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+        sleep 0.05
+      end
+      Process.kill('KILL', -pid)
+    rescue Errno::ESRCH, Errno::ECHILD
+      nil
+    ensure
+      begin
+        Process.wait2(pid)
+      rescue Errno::ECHILD
+        nil
       end
     end
 
@@ -257,7 +313,7 @@ module Workspaces
       'Usage: bin/workspaces serve [--require FILE] | create (--branch REF | --pr NUMBER | --new-branch NAME [--from REF]) [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
         'list [--pr NUMBER] [--json] | show/start/prepare/restart ID [--preset NAME] [--set NAME=VALUE] [--unset NAME] [--json] | ' \
         'resume ID [--from STEP | --only STEP] [--json] | stop ID | keep-awake ID [--off] | ' \
-        'exec ID -- COMMAND... | remove ID [--force] | purge-secrets [--dry-run]'
+        'exec ID [--timeout SECONDS] -- COMMAND... | remove ID [--force] | purge-secrets [--dry-run]'
     end
 
     def help(*)

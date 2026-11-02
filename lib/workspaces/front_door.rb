@@ -165,7 +165,7 @@ module Workspaces
                 else
                   @coordinator.update_environment(id, **parse_environment_changes(params))
                 end
-      return response(409, 'Workspace is busy preparing, restarting, or running a command') unless updated
+      return response(409, WorkspaceLock.busy_message(id)) unless updated
 
       redirect(Config.dashboard_url(id))
     rescue EnvironmentOverrides::Invalid => e

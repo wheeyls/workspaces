@@ -1,4 +1,5 @@
 require_relative 'workspaces/config'
+require_relative 'workspaces/workspace_lock'
 require_relative 'workspaces/state_store'
 require_relative 'workspaces/port_allocator'
 require_relative 'workspaces/child_env'

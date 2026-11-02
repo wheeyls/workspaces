@@ -20,12 +20,26 @@ module Workspaces
     DEFAULT_SLEEP_AFTER_MINUTES = 30
     DEFAULT_WAKE_TIMEOUT_SECONDS = 90
     DEFAULT_SLEEP_SWEEP_SECONDS = 30
+    DEFAULT_EXEC_TIMEOUT_SECONDS = 900
 
     # Seconds a ready workspace may go without preview traffic before it is put to sleep, or nil when
     # sleeping is switched off (WORKSPACES_SLEEP_AFTER_MINUTES=0). Fractions of a minute are allowed.
     def self.sleep_after_seconds
       minutes = positive_number('WORKSPACES_SLEEP_AFTER_MINUTES', DEFAULT_SLEEP_AFTER_MINUTES, allow_zero: true)
       minutes.zero? ? nil : minutes * 60
+    end
+
+    # How long `workspaces exec` lets a command run before stopping it, or nil for no limit. An explicit
+    # value (the --timeout option) wins over WORKSPACES_EXEC_TIMEOUT_SECONDS, which wins over the default.
+    # Zero means no limit.
+    def self.exec_timeout_seconds(explicit)
+      value = explicit.nil? ? ENV.fetch('WORKSPACES_EXEC_TIMEOUT_SECONDS', DEFAULT_EXEC_TIMEOUT_SECONDS.to_s) : explicit
+      seconds = Float(value)
+      raise ArgumentError, 'The exec timeout must be a non-negative number of seconds' unless seconds.finite? && seconds >= 0
+
+      seconds.zero? ? nil : (seconds % 1).zero? ? seconds.to_i : seconds
+    rescue ArgumentError, TypeError
+      raise ArgumentError, 'The exec timeout must be a non-negative number of seconds'
     end
 
     # How long the first request to a sleeping preview waits for the server to be ready.
