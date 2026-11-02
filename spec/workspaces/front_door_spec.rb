@@ -109,6 +109,44 @@ RSpec.describe Workspaces::FrontDoor do
     expect(Workspaces::Registry.new.list.length).to eq(1)
   end
 
+  describe 'while the workspace lock is held' do
+    def stub_ready_backend(operation)
+      snapshot = workspace.describe.merge('status' => 'ready', 'active' => true, 'lock_operation' => operation)
+      allow(coordinator).to receive(:snapshot).with(workspace.id, include_log: false).and_return(snapshot)
+      allow(Workspaces::Backend).to receive(:new).with(workspace.id).and_return(instance_double(Workspaces::Backend, port: 30123))
+      http = instance_double(Net::HTTP)
+      response = instance_double(Net::HTTPResponse, code: '200', body: 'app', each_header: {}.each)
+      allow(response).to receive(:get_fields).with('set-cookie').and_return(nil)
+      allow(http).to receive(:request).and_return(response)
+      allow(Net::HTTP).to receive(:start).and_yield(http)
+    end
+
+    it 'keeps serving the preview while a command runs in the workspace, because the server is untouched' do
+      stub_ready_backend('exec')
+
+      status, _, body = request('/products', host: Workspaces::Config.preview_host(workspace.id))
+
+      expect(status).to eq(200)
+      expect(body).to eq(['app'])
+    end
+
+    it 'still refuses to serve while a restart holds the lock, because the server is being replaced' do
+      stub_ready_backend('restart')
+
+      status, = request('/products', host: Workspaces::Config.preview_host(workspace.id))
+
+      expect(status).not_to eq(200)
+    end
+
+    it 'still refuses to serve when it cannot tell what holds the lock' do
+      stub_ready_backend(nil)
+
+      status, = request('/products', host: Workspaces::Config.preview_host(workspace.id))
+
+      expect(status).not_to eq(200)
+    end
+  end
+
   it 'proxies warm workspace requests with canonical forwarding headers' do
     snapshot = workspace.describe.merge('status' => 'ready', 'active' => false)
     allow(coordinator).to receive(:snapshot).with(workspace.id, include_log: false).and_return(snapshot)

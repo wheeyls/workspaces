@@ -439,6 +439,18 @@ RSpec.describe Workspaces::Coordinator do
     end
   end
 
+  it 'reports what holds the lock in the snapshot, so a caller can tell a command from a rebuild' do
+    coordinator = described_class.new
+    expect(coordinator.snapshot(workspace.id)['lock_operation']).to be_nil
+
+    Workspaces::Registry.new.with_lock(workspace.id, operation: 'exec', detail: 'ruby') do
+      expect(coordinator.snapshot(workspace.id)).to include('active' => true, 'lock_operation' => 'exec')
+      expect(coordinator.snapshot(workspace.id).keys.grep(/lock/)).to eq(['lock_operation'])
+    end
+
+    expect(coordinator.snapshot(workspace.id)['lock_operation']).to be_nil
+  end
+
   it 'serializes preparation and commands against the same per-workspace lock' do
     registry = Workspaces::Registry.new
     registry.with_lock(workspace.id) do

@@ -262,6 +262,7 @@ module Workspaces
     def snapshot_fields(id, entry, busy, status, log, include_log)
       {
         'workspace_id' => id, 'status' => status, 'active' => busy,
+        'lock_operation' => busy ? WorkspaceLock.holder(id)&.fetch('operation', nil) : nil,
         'sleeping' => status == 'sleeping', 'slept_at' => entry['slept_at'],
         'keep_awake' => !!entry['keep_awake'], 'sleep_after_seconds' => Config.sleep_after_seconds,
         'message' => status == entry['status'] ? entry['message'] : status.capitalize,
