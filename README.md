@@ -75,6 +75,23 @@ A few things worth knowing:
   `workspaces exec <id> -- git lfs pull --include='path/**'`.
 - Workspaces created before this behavior keep their real files; nothing is converted.
 
+### Running a command in a workspace
+
+`workspaces exec <id> [--timeout SECONDS] -- COMMAND [ARGUMENTS...]` runs a command in the
+workspace's directory with the workspace's environment, and exits with the command's own status.
+
+- It holds the workspace's lock while it runs, so a restart, stop or removal is refused until it
+  finishes. That is what stops a command racing a rebuild.
+- A command is stopped after **15 minutes** by default, along with everything it started, and
+  `exec` exits 124 (what `timeout(1)` uses). Change it with `--timeout SECONDS` or
+  `WORKSPACES_EXEC_TIMEOUT_SECONDS`; `0` means no limit. An explicit `--timeout` wins.
+- Anyone refused while it runs is told what holds the lock, for example
+  `Workspace is busy: running a command (bin/rails), pid 1365484, for 28m 5s. It will be stopped
+  automatically after 15m 0s`. Only the executable is recorded, never its arguments, because
+  those can carry secrets.
+- The lock is released by the operating system when its holder exits for any reason, including
+  being killed, so a dead command cannot leave a workspace stuck.
+
 ### Step timings
 
 Per-step durations are persisted in seconds in workspace step status JSON, so they
