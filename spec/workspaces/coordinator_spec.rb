@@ -455,6 +455,105 @@ RSpec.describe Workspaces::Coordinator do
     expect(workspace.path.join('result.txt').read).to eq('literal;not-shell')
   end
 
+  describe 'exec limits and visibility' do
+    def run_exec(*args)
+      status = nil
+      _out, err = capture_streams { status = Workspaces::Cli.new.run(['exec', workspace.id, *args]) }
+      [status, err]
+    end
+
+    def capture_streams
+      original = [$stdout, $stderr]
+      $stdout = StringIO.new
+      $stderr = StringIO.new
+      yield
+      [$stdout.string, $stderr.string]
+    ensure
+      $stdout, $stderr = original
+    end
+
+    # Waits until the command has actually started, rather than guessing how long that takes.
+    def wait_for_running_command
+      deadline = Time.now + 5
+      sleep 0.02 until Workspaces::WorkspaceLock.holder(workspace.id)&.key?('child_pid') || Time.now > deadline
+    end
+
+    it 'stops a command that outlives its time limit, exits 124 and says why' do
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      status, err = run_exec('--timeout', '0.3', '--', 'ruby', '-e', 'sleep 60')
+
+      expect(status).to eq(124)
+      expect(err).to include('timed out after 0.3s')
+      expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).to be < 15
+    end
+
+    it 'kills the whole process group, so a grandchild cannot keep running' do
+      marker = workspace.path.join('grandchild.pid')
+      script = %(pid = Process.spawn('sleep', '60'); File.write('grandchild.pid', pid); sleep 60)
+
+      run_exec('--timeout', '1.5', '--', 'ruby', '-e', script)
+      grandchild = Integer(marker.read)
+      sleep 0.3
+
+      expect { Process.kill(0, grandchild) }.to raise_error(Errno::ESRCH)
+    end
+
+    it 'releases the lock after a timeout, so the next operation is not refused' do
+      run_exec('--timeout', '0.3', '--', 'ruby', '-e', 'sleep 60')
+
+      expect(Workspaces::WorkspaceLock.held?(workspace.id)).to be(false)
+      expect(Workspaces::Registry.new.with_lock(workspace.id, operation: 'stop') { :ok }).to eq(:ok)
+    end
+
+    it 'leaves a command that finishes in time alone, with its own exit status' do
+      status, = run_exec('--timeout', '30', '--', 'ruby', '-e', 'exit 7')
+
+      expect(status).to eq(7)
+    end
+
+    it 'applies a default limit when none is given' do
+      ClimateControl.modify('WORKSPACES_EXEC_TIMEOUT_SECONDS' => '0.3') do
+        status, err = run_exec('--', 'ruby', '-e', 'sleep 60')
+
+        expect(status).to eq(124)
+        expect(err).to include('timed out after 0.3s')
+      end
+    end
+
+    it 'lets --timeout 0 mean no limit, for the rare job that needs it' do
+      expect(Workspaces::Config.exec_timeout_seconds(0)).to be_nil
+    end
+
+    it 'defaults to 15 minutes' do
+      expect(Workspaces::Config.exec_timeout_seconds(nil)).to eq(900)
+    end
+
+    it 'rejects a limit that is not a number' do
+      status, err = run_exec('--timeout', 'soon', '--', 'ruby', '-e', '1')
+
+      expect(status).to eq(1)
+      expect(err).to match(/timeout/i)
+    end
+
+    it 'names the running command to anyone who is refused while it runs' do
+      thread = Thread.new { run_exec('--timeout', '30', '--', 'ruby', '-e', 'sleep 0.6') }
+      wait_for_running_command
+
+      expect { Workspaces::Registry.new.with_lock(workspace.id, operation: 'stop') {} }
+        .to raise_error(ArgumentError, /busy: running a command \(ruby\).*pid \d+.*stopped automatically after 30s/m)
+      thread.join
+    end
+
+    it 'does not put the command line, which may carry a secret, in the record' do
+      thread = Thread.new { run_exec('--timeout', '30', '--', 'ruby', '-e', 'sleep 0.6', 'TOKEN=hunter2') }
+      wait_for_running_command
+
+      expect(Workspaces::Config.prepare_lock_path(workspace.id).read).not_to include('hunter2')
+      thread.join
+    end
+  end
+
   it 'returns a machine-readable creation result and leaves it unprepared' do
     output = []
     allow_any_instance_of(Workspaces::Cli).to receive(:puts) { |_, text| output << text }

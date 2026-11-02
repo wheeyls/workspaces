@@ -1,4 +1,5 @@
 require_relative 'worktree'
+require_relative 'workspace_lock'
 require_relative 'state_store'
 require_relative 'backend'
 require_relative 'recipe'
@@ -28,23 +29,24 @@ module Workspaces
       workspace
     end
 
-    def with_lock(id)
+    # Runs the block holding the workspace's lock, or raises ArgumentError saying who holds it. The block
+    # gets the workspace, and the lock when it wants to add to the holder record.
+    def with_lock(id, operation: 'busy', detail: nil)
       workspace = find(id)
-      Config.locks_dir.mkpath
-      File.open(Config.prepare_lock_path(id), File::RDWR | File::CREAT, 0o600) do |lock|
-        unless lock.flock(File::LOCK_EX | File::LOCK_NB)
-          raise ArgumentError,
-                'Workspace is busy preparing, restarting, or running a command'
-        end
+      lock = WorkspaceLock.acquire(id, operation: operation, detail: detail)
+      raise ArgumentError, WorkspaceLock.busy_message(id) unless lock
 
-        yield workspace
+      begin
+        yield workspace, lock
+      ensure
+        lock.close
       end
     end
 
     # Removes the workspace and its saved settings and secrets. Returns the secrets that could not be
     # removed (empty when all went), so callers can say so rather than report a clean removal.
     def remove(id, force: false)
-      with_lock(id) do |workspace|
+      with_lock(id, operation: 'remove') do |workspace|
         raise ArgumentError, 'Workspace has uncommitted/untracked work' if !force && workspace.dirty?
 
         Backend.new(id).stop!
@@ -78,7 +80,7 @@ module Workspaces
     end
 
     def update_pr(id)
-      with_lock(id) do |workspace|
+      with_lock(id, operation: 'update-pr') do |workspace|
         result = workspace.update_from_pr!
         message = result['updated'] ? 'PR checkout updated. Rebuild & restart to run the new code.' : 'PR checkout is already current.'
         StateStore.new(Config.state_file).set(id, 'source_update_message' => message,

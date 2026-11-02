@@ -42,7 +42,7 @@ module Workspaces
     # message) when the request cannot be honoured.
     def rerun(id, mode: :retry, key: nil)
       workspace = @registry.find(id)
-      lock = acquire_lock(id)
+      lock = acquire_lock(id, 'resume')
       return false unless lock
 
       plan = rerun_plan(id, mode, key)
@@ -96,7 +96,7 @@ module Workspaces
     # the workspace is busy, is kept awake, is not running, or is already asleep.
     def sleep!(id)
       @registry.find(id)
-      lock = acquire_lock(id)
+      lock = acquire_lock(id, 'sleep')
       return false unless lock
 
       begin
@@ -122,7 +122,7 @@ module Workspaces
     # the one holding the workspace lock gets past the check.
     def wake(id)
       workspace = @registry.find(id)
-      lock = acquire_lock(id)
+      lock = acquire_lock(id, 'wake')
       return false unless lock
 
       entry = @state.get(id) || {}
@@ -142,7 +142,7 @@ module Workspaces
 
     # Stops the server by hand. A workspace stopped this way is not asleep, so traffic never wakes it.
     def stop(id)
-      @registry.with_lock(id) do
+      @registry.with_lock(id, operation: 'stop') do
         Backend.new(id).stop!
         @state.set(id, 'status' => 'stopped', 'message' => 'Server stopped', 'sleep_state' => nil, 'slept_at' => nil)
       end
@@ -249,7 +249,7 @@ module Workspaces
     end
 
     def finish_interrupted_sleep(id)
-      lock = acquire_lock(id)
+      lock = acquire_lock(id, 'sleep')
       return unless lock
 
       begin
@@ -290,7 +290,7 @@ module Workspaces
 
     def launch(id, restart:, force:, prelaunch: nil)
       workspace = @registry.find(id)
-      lock = acquire_lock(id)
+      lock = acquire_lock(id, restart ? 'restart' : 'prepare')
       return false unless lock
 
       if prelaunch && !restart && !force && Backend.new(id).running?
@@ -335,12 +335,8 @@ module Workspaces
                  'prepare_started_at' => now, 'completed_at' => nil, 'last_error' => nil, 'total_seconds' => nil)
     end
 
-    def acquire_lock(id)
-      Config.locks_dir.mkpath
-      # The worker owns this duplicate; closing the request's descriptor must not release its lock.
-      File.open(Config.prepare_lock_path(id), File::RDWR | File::CREAT, 0o600) do |file|
-        file.dup if file.flock(File::LOCK_EX | File::LOCK_NB)
-      end
+    def acquire_lock(id, operation)
+      WorkspaceLock.acquire(id, operation: operation)
     end
 
     def publish_starting(id, restart, extra: {})
@@ -434,10 +430,7 @@ module Workspaces
     end
 
     def locked?(id)
-      path = Config.prepare_lock_path(id)
-      return false unless path.file?
-
-      File.open(path, File::RDWR) { |lock| !lock.flock(File::LOCK_EX | File::LOCK_NB) }
+      WorkspaceLock.held?(id)
     end
 
     def log_tail(id, log)
