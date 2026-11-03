@@ -326,11 +326,21 @@ module Workspaces
       end
 
       snapshot = @coordinator.snapshot(id, include_log: false)
-      return unavailable(id, request) unless snapshot['status'] == 'ready' && !snapshot['active']
+      return unavailable(id, request) unless servable?(snapshot)
 
       request.env[WORKSPACE_ID_ENV] = id
       request.env[WORKSPACE_ENV] = snapshot
       @forwarder.call(request.env)
+    end
+
+    # A ready workspace is served unless something is changing it. A command run with `exec` leaves the
+    # server alone, so a preview keeps working while one runs, and a command that hangs cannot take the
+    # preview down with it. Anything else holding the lock (a restart, a rebuild, a PR update, removal) may
+    # be replacing the server or its files, and so does an unknown holder: those are still refused.
+    def servable?(snapshot)
+      return false unless snapshot['status'] == 'ready'
+
+      !snapshot['active'] || snapshot['lock_operation'] == 'exec'
     end
 
     # A lease keeps the workspace awake for as long as its request is being served. A response body

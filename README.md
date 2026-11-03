@@ -91,6 +91,9 @@ workspace's directory with the workspace's environment, and exits with the comma
   those can carry secrets.
 - The lock is released by the operating system when its holder exits for any reason, including
   being killed, so a dead command cannot leave a workspace stuck.
+- The preview keeps being served while a command runs, because `exec` leaves the server alone. A
+  restart, rebuild, PR update or removal holding the lock still takes the preview offline, since
+  those replace the server or its files.
 
 ### Step timings
 
