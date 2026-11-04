@@ -36,6 +36,22 @@ RSpec.describe Workspaces::FrontDoor, 'the workspace card' do
       expect(html).not_to include('id="environment-form"', 'id="remove-form"', 'id="steps"')
     end
 
+    it 'links back to all workspaces from the card, in the header beside the settings link' do
+      _, _, html = page("/workspaces/#{workspace.id}")
+
+      header = html[/<header class="card__header">.*?<\/header>/m]
+      expect(header).to match(%r{<a [^>]*href="/workspaces"[^>]*>})
+      expect(header).to include('All workspaces')
+      expect(header.index('All workspaces')).to be < header.index("/workspaces/#{workspace.id}/settings")
+    end
+
+    it 'gives that link an accessible name that says where it goes, distinct from the settings link' do
+      _, _, html = page("/workspaces/#{workspace.id}")
+
+      expect(html).to match(%r{<a [^>]*href="/workspaces"[^>]*aria-label="All workspaces"|<a [^>]*aria-label="All workspaces"[^>]*href="/workspaces"})
+      expect(html.scan('aria-label="Settings and details"').length).to eq(1)
+    end
+
     it 'shows the preview link only when the workspace is ready' do
       stub_snapshot('status' => 'ready')
       _, _, ready = page("/workspaces/#{workspace.id}")

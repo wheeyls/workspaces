@@ -329,6 +329,11 @@ module Workspaces
       @preview ? Config.settings_url(@id) : "/workspaces/#{@id}/settings"
     end
 
+    # Back to the list of every workspace, from the card.
+    def index_href
+      @preview ? Config.index_url : '/workspaces'
+    end
+
     # Where the card's start form posts. A shared card with presets saves the chosen one through the
     # environment form; a preview card starts through its own origin.
     def start_form_action

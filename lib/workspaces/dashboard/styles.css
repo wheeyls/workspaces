@@ -708,6 +708,7 @@ p:empty:not([role]):not([aria-live]) { display: none; }
 .card-page { min-block-size: 100dvb; display: grid; place-items: center; padding: var(--space-6) var(--space-3); }
 .card { inline-size: min(100%, 26rem); display: grid; gap: var(--space-5); align-content: start; padding: var(--panel-padding); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); }
 .card__header { display: flex; justify-content: space-between; align-items: start; gap: var(--space-3); }
+.card__links { display: flex; align-items: center; gap: var(--space-1); flex: none; }
 .card__name { display: grid; gap: var(--space-1); min-inline-size: 0; }
 .card__id { overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text); }
 .card__text { display: grid; gap: var(--space-2); }
