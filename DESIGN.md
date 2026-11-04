@@ -8,17 +8,39 @@ GET is read-only. All creation and lifecycle controls submit same-origin POST fo
 
 ## Visual direction
 
-Restrained tooling UI: a near-black page, one slightly lighter card surface with a hairline border and no shadow, a compact spacing rhythm, clear status affordances, and no decorative animation. Every text pairing is at least 4.5:1 against its surface.
+Restrained tooling UI built on the **Arb design system, Native v1** (`~/code/arb-design-system`, commit `88765ca`): a deep-teal page in the dark theme and limestone in the light one, one slightly lighter card surface with a hairline border and no shadow, a compact spacing rhythm, clear status affordances, and no decorative animation. Every text pairing is at least 4.5:1 against its surface, and `spec/workspaces/arb_design_system_spec.rb` measures each one in both themes.
+
+Only colour changed in this migration. Type, spacing, radii and motion timing are the ones the dashboard already had, because the Arb kit defines none of them. No state, label, handler, route or permission changed.
 
 ## Tokens used
 
 ### Color
 
-- `--bg` `#0b0f17`: page. `--bg-elevated` `#141a26`: card surface. `--border` `#2a3447`: card edge. `--divider` `#252e41`: row dividers. `--border-strong` `#3f4b63`: the table header rule.
-- `--control-border`: the edge of inputs, outline buttons and tabs. Currently `#3f4b63`, about 2:1 against the card. WCAG 1.4.11 asks 3:1 for a control's boundary, so this is a known shortfall, kept to match the design handoff; `#5b6b8a` or lighter reaches 3:1. It is one token, so changing it is a one-line edit.
-- Text: `--text-strong` `#f8fafc` (headings, workspace names, input values), `--text` `#e2e8f0` (body), `--text-cell` `#cbd5e1` (table cells, logs), `--muted` `#a8b3c7` (secondary), `--placeholder` `#8a97ad`.
-- `--accent` `#6fa8ff` with `--on-accent` `#06101f` text on buttons; `--accent-hover` `#8dbbff` for link and button hover. `--success`, `--danger` and `--warning` are unchanged.
-- **Status pills** take three custom properties, `--pill-bg`, `--pill-text` and `--pill-dot`, set per `data-status`. Sleeping indigo, idle amber and stopped red come from the handoff. Ready green, preparing cyan, error deeper red and interrupted orange were chosen to the same contrast (text 8:1 or better, dot 3:1 or better). Any other status gets the neutral slate pair.
+`dashboard/arb-palette.css` is the kit's `tokens/palette.css` copied unchanged (a two-line note on top says where from). It defines 28 `--arb-*` tokens per theme, selected by `data-theme` on `<html>`. **The theme follows the visitor's operating-system setting, with dark as the default**; a one-line script in the `<head>` sets it before anything paints, and a page without script stays dark. There is no theme switch, because the kit says to follow the host's existing behaviour and the dashboard had none.
+
+`styles.css` names no colour of its own, which a spec enforces (no hex, `rgb`, `hsl`, `color-mix` or faded opacity). Its `:root` maps a short list of roles onto the palette, and everything below uses the roles or `--arb-*` directly:
+
+| Role in `styles.css` | Arb token | Used for |
+|---|---|---|
+| `--bg` | `bg` | the page |
+| `--bg-elevated` | `surface` | panels, the card, inputs, log blocks |
+| `--arb-elevated` | `elevated` | the progress track, neutral pill fill |
+| `--text`, `--muted` | `text`, `muted` | body and supporting text (the old strong, cell and placeholder greys are gone: one text colour, one muted) |
+| `--border` | `border` | every edge and divider, including control edges, so controls now meet 3:1 (the old control edge was about 2:1) |
+| `--accent`, `--accent-hover`, `--accent-pressed`, `--on-accent` | `accent`, `action_hover`, `action_pressed`, `on_accent` | primary buttons and links |
+| `--focus` | `focus` | the focus ring |
+| `--danger` / `--arb-error*`, `--arb-on-error` | `error`, `error_hover`, `error_pressed`, `on_error` | Delete, the setup error callout, the danger zone, failed steps |
+| `--warning`, `--success` | `warning`, `success` | slow-progress fill, vault note, completed step icon |
+| `--arb-selected-bg`, `--arb-selected-border` | `selected_bg`, `selected_border` | the chosen preset, the preset badge, the log tab you are on |
+| `--arb-surface-hover`, `--arb-surface-pressed` | `surface_hover`, `surface_pressed` | hover and pressed on subtle buttons, rows, tabs |
+| `--arb-disabled-*` | `disabled_bg`, `disabled_fg`, `disabled_border` | disabled buttons and fields, at full opacity |
+
+- **Focus** is a 2px `focus` ring with a 2px gap, as the kit specifies. The gap is the outline's own offset, which is transparent and so shows the surface actually behind the control.
+- **Selected** is never colour alone: the chosen preset and the current log tab carry a check mark, because the light theme's selected and pressed fills are the same colour.
+- **Disabled** controls use the disabled tokens at full opacity, not a faded copy of the enabled style.
+- **Status pills** pair a glyph with the word the server already sends: ready is a check on `success_bg`, error a cross on `error_bg`, interrupted an exclamation mark on `warning_bg` (a run that was cut off, not one that failed), preparing a ringed dot in `accent`. Idle, stopped and sleeping have no palette role of their own, so they are told apart by glyph and word (empty ring, filled square, half ring) in `steel` on a neutral fill. The earlier design gave each its own hue; the palette has no roles to carry that, and the guide forbids inventing near-matches.
+- **Motion**: the dots that pulsed forever (next to the current step, and on a busy pill) are gone, because a pulse that never stops says "working" whether or not anything is. The bar, the step name and its number carry progress. The step status icon no longer pulses either.
+- **Forced colors**: shapes that carry meaning get a real border so they survive the system palette.
 
 ### Radius and depth
 
@@ -39,7 +61,7 @@ Restrained tooling UI: a near-black page, one slightly lighter card surface with
 
 - **Creation form**: four labelled fields in one wrapping row (`flex: 1 1 220px`, 16px gap), each with a real `<label for>`, then a `type="submit"` button on its own line.
 - **Workspace inventory**: a centered column up to 1180px. Rows are ordered by last startup, newest first; workspaces that never started (or whose start time cannot be read) come last, and ties fall back to the id so the list never shuffles between loads. Moments are compared as moments, not text. The page header carries "N managed worktrees · none running" (or "· K running"), counted from the data. The table sits in an `overflow-x: auto` wrapper with `min-width: 820px`, so a phone scrolls it sideways instead of cramming or hiding columns. Rows have 16px padding; workspace names are monospaced links with no underline until hover. Times read "Oct 27, 10:48", are UTC (the headers say so) and keep the full ISO value in a `title`. A missing start reads "Never" and a missing creation time "Unavailable", in the muted colour.
-- **Status pill**: a dot and one word (13px, 600, fully rounded), never colour alone. A busy workspace adds "(busy)" and pulses its dot, which stops under reduced motion.
+- **Status pill**: a glyph and one word (13px, 600, fully rounded), never colour alone. A busy workspace adds "(busy)" to the word; nothing pulses.
 - **Setup progress**: names and ordered states come from repository run steps; failures are highlighted. Restart shows the background launch and later readiness commands.
 - **Actions by state**: idle/stopped offers Start; active operations show progress without lifecycle buttons; failure offers Retry; ready offers Open workspace plus rebuild/restart/stop.
 - **PR source update**: a secondary Update from PR form only for PR-sourced workspaces; it fetches the latest PR head, fast-forwards the checkout, and preserves local edits without rebuilding or restarting. A persistent result message explains when rebuild is needed or when a retained stash needs manual recovery.
@@ -79,12 +101,14 @@ Restrained tooling UI: a near-black page, one slightly lighter card surface with
 - **Editable environment**: labelled monospace multiline `NAME=value` control for non-secret recipe defaults and added workspace settings; busy state disables the fieldset and save button, values are escaped in HTML, other legacy overrides remain hidden. Omitted default names revert to recipe defaults; omitted added names are unset.
 - **Environment presets (JS-enhanced)**: optional preset selector is hidden by default and revealed only when JavaScript is active and presets exist. Selecting a preset replaces the entire draft editor content and announces unsaved state without submitting. Draft edits remain local until Save & restart.
 - **Danger Zone**: isolated section on the detail page with explicit loss-of-uncommitted-and-untracked-work copy, an exact-workspace-ID confirmation field, and a destructive action. Deletion remains possible without JavaScript, is disabled while setup is busy, and never appears as a list-row action.
-- **Workspace favicon**: a small two-pane workspace mark served by the dashboard host. Use `--accent` blue for localhost and `--warning` gold for hosted origins so browser tabs signal the environment without relying on page text. The icon contains no workspace-specific data.
+- **Workspace favicon**: a small two-pane workspace mark served by the dashboard host. **Not migrated to the Arb mark yet**: blue for localhost and gold for hosted origins is how a browser tab tells the environments apart, and the Arb guide forbids recolouring or badging its mark, so swapping it would drop that signal. This needs a decision, not a guess. The icon contains no workspace-specific data.
 
 ## Accessibility constraints
 
 - Semantic sections/headings for all regions
-- Focus-visible outlines on actionable controls
+- Focus-visible outlines on actionable controls: a 2px ring with a 2px gap, in the palette's focus colour
+- Selected controls carry a check mark as well as a fill; statuses carry a glyph as well as a colour
+- Forced-colors and reduced-motion are handled
 - `aria-live` limited to phase-change and connection warnings (not full log stream)
 - No-JS refresh path always available
 

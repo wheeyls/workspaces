@@ -109,12 +109,22 @@ module Workspaces
       document('GitHub access needs setup', ERB.new(template).result(binding))
     end
 
+    # The Arb palette (dashboard/arb-palette.css) defines its colours per theme, selected by data-theme on the
+    # root element. The theme follows the visitor's operating-system setting, with dark when there is none.
+    # It is set by a tiny script in the head, before anything paints, so a light-mode visitor never sees a
+    # dark flash; the page without script stays dark, which the palette and the stylesheet are both tested in.
+    THEME_SCRIPT = "document.documentElement.dataset.theme=" \
+                   "window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'"
+
     def document(title, body)
-      css = File.read(File.join(__dir__, 'dashboard/styles.css'), encoding: 'UTF-8')
+      palette = File.read(File.join(__dir__, 'dashboard/arb-palette.css'), encoding: 'UTF-8')
+      css = palette + File.read(File.join(__dir__, 'dashboard/styles.css'), encoding: 'UTF-8')
       script = File.read(File.join(__dir__, 'dashboard/app.js'), encoding: 'UTF-8') +
                File.read(File.join(__dir__, 'dashboard/environment.js'), encoding: 'UTF-8')
-      '<!doctype html><html lang="en"><head><meta charset="utf-8">' \
+      '<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8">' \
         '<meta name="viewport" content="width=device-width, initial-scale=1">' \
+        '<meta name="color-scheme" content="dark light">' \
+        "<script>#{THEME_SCRIPT}</script>" \
         '<link rel="icon" type="image/svg+xml" href="/favicon.svg">' \
         "<title>#{escape(title)}</title><style>#{css}</style></head>" \
         "<body>#{body}<script>#{script}</script></body></html>"

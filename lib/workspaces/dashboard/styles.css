@@ -1,29 +1,23 @@
 :root {
-  /* Surfaces. Page, then card, then the hairlines that divide them. */
-  --bg: #0b0f17;
-  --bg-elevated: #141a26;
-  --border: #2a3447;
-  --divider: #252e41;
-  --border-strong: #3f4b63;
-  /* The edge of an input or outline button. WCAG asks 3:1 for a control's boundary against what is
-     behind it; #3f4b63 is about 2:1 on the card. One token, so raising it is a one-line change. */
-  --control-border: #3f4b63;
-  /* Text. Every pairing with a surface is at least 4.5:1. */
-  --text-strong: #f8fafc;
-  --text: #e2e8f0;
-  --text-cell: #cbd5e1;
-  --muted: #a8b3c7;
-  --placeholder: #8a97ad;
-  --accent: #6fa8ff;
-  --accent-hover: #8dbbff;
-  --on-accent: #06101f;
-  --success: #2fbf8f;
-  --danger: #ff6f74;
-  --warning: #f1bb53;
+  /* Colours come from the Arb palette (arb-palette.css), per theme, and only through these roles. Nothing
+     below this block names a colour: add a role here, never a literal. A role the palette lacks is a gap to
+     raise with the palette's owner, not something to approximate with a mix or an opacity. */
+  --bg: var(--arb-bg);
+  --bg-elevated: var(--arb-surface);
+  --border: var(--arb-border);
+  --text: var(--arb-text);
+  --muted: var(--arb-muted);
+  --accent: var(--arb-accent);
+  --accent-hover: var(--arb-action-hover);
+  --accent-pressed: var(--arb-action-pressed);
+  --on-accent: var(--arb-on-accent);
+  --success: var(--arb-success);
+  --danger: var(--arb-error);
+  --warning: var(--arb-warning);
+  --focus: var(--arb-focus);
   --radius: 12px;
   --radius-control: 8px;
   --control-height: 44px;
-  --shadow: none;
   --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --space-1: 4px;
@@ -37,6 +31,12 @@
   --panel-padding: 28px;
 }
 
+/* Focus: a 2px ring in the palette's focus colour, with a 2px gap. The gap is required: the ring is only approved
+   against surfaces, not directly against a button's fill. It is the outline's own offset, which is transparent, so
+   it shows whatever surface the control actually sits on (the page or a panel) and needs no colour of its own. The
+   ring takes no space and moves nothing. */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
 * {
   box-sizing: border-box;
 }
@@ -45,7 +45,7 @@
    which tag was used. Reset them once; every gap is declared by a stack rule below
    using the --space-* scale. */
 h1, h2, h3, h4, p, ul, ol, dl, dd, pre, fieldset, figure { margin: 0; }
-h2 { font-size: 20px; font-weight: 600; line-height: 1.3; color: var(--text-strong); }
+h2 { font-size: 20px; font-weight: 600; line-height: 1.3; color: var(--text); }
 label { font-size: 14px; font-weight: 600; }
 ol, ul { padding-inline-start: var(--space-6); }
 legend { padding: 0; }
@@ -67,27 +67,26 @@ input:not([type='checkbox']):not([type='radio']), select {
   max-inline-size: 100%;
   block-size: var(--control-height);
   padding-inline: var(--space-3);
-  color: var(--text-strong);
-  background: var(--bg);
-  border: 1px solid var(--control-border);
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
   font-family: var(--font-mono);
   font-size: 14px;
 }
 select { font-family: var(--font-sans); font-size: 15px; }
-::placeholder { color: var(--placeholder); opacity: 1; }
-input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+::placeholder { color: var(--muted); opacity: 1; }
 summary { cursor: pointer; color: var(--muted); }
-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .workspace-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 /* The server-rendered action forms live in a wrapper; let them flow with the sibling button. */
 #actions { display: contents; }
-.setup-error { --panel-padding: var(--space-4); padding: var(--panel-padding); border-color: var(--danger); box-shadow: none; }
-.setup-error h3 { color: var(--danger); margin-block-start: 0; }
+.setup-error { --panel-padding: var(--space-4); padding: var(--panel-padding); border-color: var(--arb-error); background: var(--arb-error-bg); }
+.setup-error h3, .setup-error h2 { color: var(--arb-error); margin-block-start: 0; }
+.setup-error pre { background: var(--bg-elevated); }
 .step-outcome { margin-inline-start: auto; font-size: 12px; }
-.activity-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: workspace-pulse 1.5s infinite; }
-@keyframes workspace-pulse { 50% { opacity: 0.3; } }
-@media (prefers-reduced-motion: reduce) { .activity-dot { animation: none; } }
+/* The dot beside the current step is dropped: a pulse that never stops says "working" whether or not anything is
+   happening. The step's name, its number and the bar are what show progress. */
+.activity-dot { display: none; }
 dd, h1, code { overflow-wrap: anywhere; }
 dt + dd { margin-block-start: var(--space-1); }
 dd + dt { margin-block-start: var(--space-3); }
@@ -134,7 +133,7 @@ a {
 
 h1 {
   margin: 0;
-  color: var(--text-strong);
+  color: var(--text);
   font-size: 32px;
   font-weight: 700;
   line-height: 1.2;
@@ -166,7 +165,6 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--panel-padding);
-  box-shadow: var(--shadow);
 }
 
 /* Disclosure panels keep their native layout; only the open state adds spacing below. */
@@ -195,7 +193,7 @@ h1 {
 
 /* The build progress bar: a plain track and fill, then one line saying which step and how long. */
 .build-progress { display: grid; gap: var(--space-3); }
-.progress-bar { block-size: 10px; border-radius: 999px; background: color-mix(in oklab, var(--muted) 22%, transparent); overflow: hidden; }
+.progress-bar { block-size: 10px; border-radius: 999px; background: var(--arb-elevated); border: 1px solid var(--border); overflow: hidden; }
 .progress-bar__fill { display: block; block-size: 100%; border-radius: inherit; background: var(--accent); transition: inline-size 600ms ease; }
 .progress-bar[data-slow='true'] .progress-bar__fill { background: var(--warning); }
 .progress-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--space-1) var(--space-4); }
@@ -224,21 +222,21 @@ h1 {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
-  border: 1px solid color-mix(in oklab, var(--success) 55%, var(--border));
+  border: 1px solid var(--arb-selected-border);
   border-radius: 999px;
-  background: color-mix(in oklab, var(--success) 22%, transparent);
+  background: var(--arb-selected-bg);
   color: var(--text);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
   white-space: nowrap;
 }
-.badge::before { content: ''; inline-size: 6px; block-size: 6px; border-radius: 999px; background: var(--success); }
+.badge::before { content: ''; inline-size: 6px; block-size: 6px; border-radius: 999px; background: var(--arb-selected-border); }
 #technical-section .technical > section:not(.danger-zone) { padding: 0; border: 0; box-shadow: none; background: none; }
-#technical-section .danger-zone { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--danger); border-radius: var(--radius); }
+#technical-section .danger-zone { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--arb-error); background: var(--arb-error-bg); border-radius: var(--radius); }
 #technical-section .log-panel { padding: 0; }
 .log-panel > #log { margin-block-start: 0; }
-#technical-section .danger-zone h3 { color: var(--danger); font-size: 1rem; }
+#technical-section .danger-zone h3 { color: var(--arb-error); font-size: 1rem; }
 #technical-section h3 { font-size: 1rem; }
 
 .status-row {
@@ -280,8 +278,8 @@ h1 {
   transition: background-color 120ms ease;
 }
 .step-log > summary::-webkit-details-marker { display: none; }
-.step-log > summary:hover { background: color-mix(in oklab, var(--accent) 8%, transparent); }
-.step-log > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.step-log > summary:hover { background: var(--arb-surface-hover); }
+.step-log > summary:focus-visible { outline-offset: -4px; }
 .step-log > summary::after {
   content: '';
   flex: none;
@@ -310,17 +308,17 @@ h1 {
 
 /* The status icon: a ring for waiting, a pulsing ring while running, a check, a cross. */
 .step-log__status { flex: none; inline-size: 16px; block-size: 16px; border: 2px solid var(--muted); border-radius: 999px; position: relative; }
-.step-log[data-step-state='active'] .step-log__status { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 25%, transparent); animation: workspace-pulse 1.5s infinite; }
+.step-log[data-step-state='active'] .step-log__status { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 3px, transparent 3.5px); }
 .step-log[data-step-state='complete'] .step-log__status { border-color: var(--success); background: var(--success); }
 .step-log[data-step-state='complete'] .step-log__status::after { content: ''; position: absolute; inset-inline-start: 4px; inset-block-start: 1px; inline-size: 4px; block-size: 8px; border-inline-end: 2px solid var(--bg); border-block-end: 2px solid var(--bg); transform: rotate(40deg); }
-.step-log[data-step-state='failed'] .step-log__status { border-color: var(--danger); background: var(--danger); }
+.step-log[data-step-state='failed'] .step-log__status { border-color: var(--arb-error); background: var(--arb-error); }
 .step-log[data-step-state='failed'] .step-log__status::before,
 .step-log[data-step-state='failed'] .step-log__status::after { content: ''; position: absolute; inset-inline-start: 5px; inset-block-start: 2px; inline-size: 2px; block-size: 8px; background: var(--bg); transform: rotate(45deg); }
 .step-log[data-step-state='failed'] .step-log__status::after { transform: rotate(-45deg); }
-.step-log[data-step-state='failed'] > summary .step-log__name { color: color-mix(in oklab, var(--danger) 70%, var(--text)); }
+.step-log[data-step-state='failed'] > summary .step-log__name { color: var(--arb-error); }
 .step-log[data-step-state='pending'] > summary .step-log__name { color: var(--muted); font-weight: 400; }
 .step-log[data-step-state='unknown'] .step-log__status { border-style: dashed; }
-@media (prefers-reduced-motion: reduce) { .step-log > summary, .step-log > summary::after, .step-log[data-step-state='active'] .step-log__status { transition: none; animation: none; } }
+@media (prefers-reduced-motion: reduce) { .step-log > summary, .step-log > summary::after { transition: none; } }
 
 .env-panel {
   display: grid;
@@ -353,9 +351,9 @@ h1 {
   min-block-size: 12rem;
   resize: vertical;
   padding: var(--space-3);
-  color: var(--text-strong);
-  background: var(--bg);
-  border: 1px solid var(--control-border);
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
   font-family: var(--font-mono);
   line-height: 1.5;
@@ -378,9 +376,9 @@ h1 {
   min-inline-size: 0;
   block-size: var(--control-height);
   padding: 0 var(--space-3);
-  color: var(--text-strong);
-  background: var(--bg);
-  border: 1px solid var(--control-border);
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
   font-family: var(--font-mono);
   font-size: 14px;
@@ -403,8 +401,9 @@ h1 {
   gap: var(--space-3);
 }
 
-fieldset:disabled {
-  opacity: 0.7;
+fieldset:disabled { color: var(--arb-disabled-fg); }
+fieldset:disabled input, fieldset:disabled textarea, fieldset:disabled select {
+  background: var(--arb-disabled-bg); color: var(--arb-disabled-fg); border-color: var(--arb-disabled-border);
 }
 
 .controls-panel {
@@ -439,10 +438,15 @@ fieldset:disabled {
   padding-inline: var(--space-3);
 }
 
-.env-preset-button[aria-pressed='true'] {
-  border-color: color-mix(in oklab, var(--success) 55%, var(--border));
-  background: color-mix(in oklab, var(--success) 22%, transparent);
+.env-preset-button[aria-pressed='true'],
+.button--selected {
+  border-color: var(--arb-selected-border);
+  background: var(--arb-selected-bg);
+  color: var(--text);
 }
+/* The light theme's selected and pressed surfaces are the same colour, so a selected control needs its own
+   persistent marker rather than relying on the fill: a check, beside the label. */
+.env-preset-button[aria-pressed='true']::before { content: '\2713'; margin-inline-end: var(--space-2); font-weight: 700; }
 
 .button {
   justify-self: start;
@@ -459,33 +463,21 @@ fieldset:disabled {
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
+.button:hover:not(:disabled) { background: var(--arb-surface-hover); }
+.button:active:not(:disabled) { background: var(--arb-surface-pressed); }
 
-.button:hover,
-.button:focus-visible {
-  transform: translateY(-1px);
-}
-
-.button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
 
 .button--primary {
   background: var(--accent);
   color: var(--on-accent);
 }
 .button--primary:hover:not(:disabled) { background: var(--accent-hover); }
-
-.button--primary:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-}
+.button--primary:active:not(:disabled) { background: var(--accent-pressed); }
 
 .button--subtle {
-  border-color: var(--control-border);
+  border-color: var(--border);
 }
 
 .button--small { min-block-size: 32px; padding: 4px 10px; font-size: 12px; }
@@ -495,43 +487,62 @@ fieldset:disabled {
 .step-log__actions form { margin: 0; }
 
 .button--danger {
-  background: var(--danger);
-  color: var(--bg);
+  background: var(--arb-error);
+  color: var(--arb-on-error);
+}
+.button--danger:hover:not(:disabled) { background: var(--arb-error-hover); }
+.button--danger:active:not(:disabled) { background: var(--arb-error-pressed); }
+
+/* Disabled is its own set of colours at full opacity, never a faded version of the enabled button. */
+.button:disabled {
+  background: var(--arb-disabled-bg);
+  color: var(--arb-disabled-fg);
+  border-color: var(--arb-disabled-border);
+  cursor: not-allowed;
 }
 
-.button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-
-.danger-zone { border-color: var(--danger); }
-.danger-zone h2 { color: var(--danger); }
+.danger-zone { border-color: var(--arb-error); }
+.danger-zone h2 { color: var(--arb-error); }
 .danger-zone form { display: grid; justify-items: start; gap: var(--space-3); }
 
 .table-scroll { overflow-x: auto; }
 .workspace-table { inline-size: 100%; min-inline-size: 820px; border-collapse: collapse; }
 .workspace-table th,
-.workspace-table td { padding: 16px var(--space-4); text-align: start; vertical-align: middle; border-block-end: 1px solid var(--divider); overflow-wrap: anywhere; }
+.workspace-table td { padding: 16px var(--space-4); text-align: start; vertical-align: middle; border-block-end: 1px solid var(--border); overflow-wrap: anywhere; }
 .workspace-table th:first-child,
 .workspace-table td:first-child { padding-inline-start: 0; }
 .workspace-table th:last-child,
 .workspace-table td:last-child { padding-inline-end: 0; }
-.workspace-table thead th { padding-block: 0 12px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-block-end-color: var(--border-strong); }
+.workspace-table thead th { padding-block: 0 12px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-block-end-color: var(--border); }
 .workspace-table tbody tr:last-child > * { border-block-end: 0; }
 .workspace-table tbody th { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
-.workspace-table tbody th a { color: var(--text-strong); text-decoration: none; }
+.workspace-table tbody th a { color: var(--text); text-decoration: none; }
 .workspace-table tbody th a:hover { color: var(--accent-hover); text-decoration: underline; }
-.workspace-table tbody th a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
-.workspace-table td { color: var(--text-cell); }
+.workspace-table td { color: var(--text); }
 .workspace-table__date { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .workspace-table__date .never { color: var(--muted); }
 
-/* A status is a dot and a word, never colour alone. The colours come from three custom properties so a
-   new status is one rule. Unlisted statuses fall back to the neutral pair. */
+/* A status is a glyph and a word, never colour alone. One rule per status the product reports (the words
+   come from the server and are unchanged); the colours come from the palette's status roles.
+
+     ready        success on success_bg      check
+     error        error on error_bg          cross
+     interrupted  warning on warning_bg      exclamation   (a run that was cut off, not one that failed)
+     preparing    accent on a surface        ring with a dot
+     idle         steel on a surface         empty ring
+     stopped      steel on a surface         filled square
+     sleeping     steel on a surface         half-filled ring
+     anything else                           neutral, empty ring
+
+   idle, stopped and sleeping are told apart by their shape and their word, not by a colour the palette has no
+   role for. Where there is a tinted background it is the matching *_bg; elsewhere the pill sits on a general surface. */
 .status-pill {
-  --pill-bg: #252e41; --pill-text: #cbd5e1; --pill-dot: #94a3b8;
+  --pill-bg: var(--arb-elevated); --pill-text: var(--text); --pill-glyph: var(--arb-steel);
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   margin: 0;
-  padding: 3px 10px;
+  padding: 3px 10px 3px 8px;
   border-radius: 999px;
   background: var(--pill-bg);
   color: var(--pill-text);
@@ -540,16 +551,33 @@ fieldset:disabled {
   line-height: 1.5;
   white-space: nowrap;
 }
-.status-dot { inline-size: 7px; block-size: 7px; border-radius: 999px; background: var(--pill-dot); }
-.status-pill[data-status='sleeping'] { --pill-bg: #232c4a; --pill-text: #c7d2fe; --pill-dot: #a5b4fc; }
-.status-pill[data-status='idle'] { --pill-bg: #3a2e10; --pill-text: #fcd34d; --pill-dot: #fbbf24; }
-.status-pill[data-status='stopped'] { --pill-bg: #43191f; --pill-text: #fca5a5; --pill-dot: #f87171; }
-.status-pill[data-status='ready'] { --pill-bg: #12301f; --pill-text: #86efac; --pill-dot: #4ade80; }
-.status-pill[data-status='preparing'] { --pill-bg: #0f2f3d; --pill-text: #a5f3fc; --pill-dot: #22d3ee; }
-.status-pill[data-status='error'] { --pill-bg: #5a1a22; --pill-text: #fecaca; --pill-dot: #f87171; }
-.status-pill[data-status='interrupted'] { --pill-bg: #43250f; --pill-text: #fdba74; --pill-dot: #fb923c; }
-.status-pill[data-busy='true'] .status-dot { animation: workspace-pulse 1.5s infinite; }
-@media (prefers-reduced-motion: reduce) { .status-pill[data-busy='true'] .status-dot { animation: none; } }
+.status-dot {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 14px;
+  block-size: 14px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 2px solid var(--pill-glyph);
+  color: var(--pill-glyph);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+.status-pill[data-status='ready'] { --pill-bg: var(--arb-success-bg); --pill-text: var(--arb-success); --pill-glyph: var(--arb-success); }
+.status-pill[data-status='ready'] .status-dot { border-color: transparent; }
+.status-pill[data-status='ready'] .status-dot::before { content: '\2713'; }
+.status-pill[data-status='error'] { --pill-bg: var(--arb-error-bg); --pill-text: var(--arb-error); --pill-glyph: var(--arb-error); }
+.status-pill[data-status='error'] .status-dot { border-color: transparent; }
+.status-pill[data-status='error'] .status-dot::before { content: '\2715'; }
+.status-pill[data-status='interrupted'] { --pill-bg: var(--arb-warning-bg); --pill-text: var(--arb-warning); --pill-glyph: var(--arb-warning); }
+.status-pill[data-status='interrupted'] .status-dot { border-color: transparent; }
+.status-pill[data-status='interrupted'] .status-dot::before { content: '!'; }
+.status-pill[data-status='preparing'] { --pill-glyph: var(--arb-accent); }
+.status-pill[data-status='preparing'] .status-dot { background: radial-gradient(circle, var(--pill-glyph) 0 2px, transparent 2.5px); }
+.status-pill[data-status='stopped'] .status-dot { border-radius: 2px; background: var(--pill-glyph); }
+.status-pill[data-status='sleeping'] .status-dot { background: linear-gradient(90deg, var(--pill-glyph) 50%, transparent 50%); }
 
 /* The create form: four fields in one wrapping row, the button on its own line below. */
 .create-fields { display: flex; flex-wrap: wrap; gap: var(--space-4); }
@@ -560,10 +588,6 @@ fieldset:disabled {
 
 ol > li + li { margin-block-start: var(--space-2); }
 
-.button--success {
-  background: color-mix(in oklab, var(--success) 22%, transparent);
-  border-color: color-mix(in oklab, var(--success) 55%, var(--border));
-}
 
 .muted {
   margin: 0;
@@ -585,7 +609,7 @@ ol > li + li { margin-block-start: var(--space-2); }
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg);
-  color: var(--text-cell);
+  color: var(--text);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.4;
@@ -614,21 +638,22 @@ ol > li + li { margin-block-start: var(--space-2); }
 .log-switch a {
   color: var(--muted);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--control-border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
   text-decoration: none;
 }
+.log-switch a:hover:not([aria-current='page']) { background: var(--arb-surface-hover); color: var(--text); }
 
 .log-switch a[aria-current='page'] {
   color: var(--text);
-  border-color: var(--accent);
+  background: var(--arb-selected-bg);
+  border-color: var(--arb-selected-border);
+  font-weight: 600;
 }
+/* The tab you are on says so in words for assistive technology (aria-current) and in a marker for everyone,
+   because the light theme's selected fill is the same colour as its pressed fill. */
+.log-switch a[aria-current='page']::before { content: '\2713'; margin-inline-end: var(--space-2); }
 
-.log-switch a:focus-visible,
-.detail-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 
 .detail-link {
   color: var(--muted);
@@ -681,10 +706,10 @@ p:empty:not([role]):not([aria-live]) { display: none; }
 
 /* The card: the default page for a workspace. One small square in the middle of the screen. */
 .card-page { min-block-size: 100dvb; display: grid; place-items: center; padding: var(--space-6) var(--space-3); }
-.card { inline-size: min(100%, 26rem); display: grid; gap: var(--space-5); align-content: start; padding: var(--panel-padding); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.card { inline-size: min(100%, 26rem); display: grid; gap: var(--space-5); align-content: start; padding: var(--panel-padding); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); }
 .card__header { display: flex; justify-content: space-between; align-items: start; gap: var(--space-3); }
 .card__name { display: grid; gap: var(--space-1); min-inline-size: 0; }
-.card__id { overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text-strong); }
+.card__id { overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text); }
 .card__text { display: grid; gap: var(--space-2); }
 .card h1 { font-size: 24px; line-height: 1.25; }
 .card__summary { color: var(--muted); line-height: 1.5; }
@@ -696,5 +721,21 @@ p:empty:not([role]):not([aria-live]) { display: none; }
 .card .setup-error pre { max-block-size: 8rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .card select { inline-size: 100%; }
 .icon-link { display: inline-flex; padding: var(--space-2); border-radius: var(--radius-control); color: var(--muted); }
-.icon-link:hover { color: var(--text); background: color-mix(in oklab, var(--accent) 12%, transparent); }
-.icon-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.icon-link:hover { color: var(--text); background: var(--arb-surface-hover); }
+
+/* A selected control keeps its fill while hovered or pressed; only an unselected one takes the hover surface. */
+.env-preset-button[aria-pressed='true']:hover:not(:disabled),
+.env-preset-button[aria-pressed='true']:active:not(:disabled),
+.button--selected:hover:not(:disabled),
+.button--selected:active:not(:disabled) { background: var(--arb-selected-bg); }
+
+/* High-contrast and forced-colors modes replace our colours with the system's. Anything drawn only with a
+   background colour would then vanish, so the shapes that carry meaning get a real border. Text and focus
+   rings keep working because they were never colour-only. */
+@media (forced-colors: active) {
+  .button, .badge, .status-pill, .progress-bar, .env-preset-button { border: 1px solid ButtonText; }
+  .progress-bar__fill { background: Highlight; }
+  .step-log__status, .status-dot { forced-color-adjust: none; border-color: ButtonText; color: ButtonText; }
+  .env-preset-button[aria-pressed='true'], .button--selected { border-width: 2px; }
+  :focus-visible { outline-color: Highlight; }
+}
