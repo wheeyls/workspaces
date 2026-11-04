@@ -5,7 +5,7 @@ require 'json'
 # polls: reconciled in place by step id, opened and closed by state changes, never fighting
 # a user's own toggle, and the Web server log tab appearing when a backend log exists.
 RSpec.describe 'dashboard step accordions' do
-  def run_polls(polls, user_actions: {}, server_rendered: [])
+  def run_polls(polls, user_actions: {}, server_rendered: [], selections: {})
     script = <<~'NODE'
       const fs = require('node:fs');
       const vm = require('node:vm');
@@ -15,10 +15,14 @@ RSpec.describe 'dashboard step accordions' do
         constructor(tag, opts = {}) {
           this.tagName = tag.toUpperCase(); this.id = opts.id || null;
           this.dataset = opts.dataset || {}; this.attributes = {}; this.className = opts.className || '';
-          this.textContent = opts.textContent || ''; this.hidden = !!opts.hidden; this.open = !!opts.open;
+          this._t = opts.textContent || ''; this.writes = 0; this.hidden = !!opts.hidden; this.open = !!opts.open;
           this.disabled = false; this.children = []; this.listeners = {}; this.parentNode = null;
           this.scrollTop = 0; this.clientHeight = 100; this.scrollHeight = 100;
         }
+        // Every assignment replaces the text node, which is what drops a selection inside it, so count them.
+        get textContent() { return this._t; }
+        set textContent(v) { this._t = v; this.writes += 1; }
+        contains(n) { for (let x = n; x; x = x.parentNode) if (x === this) return true; return false; }
         get childNodes() { return this.children; }
         append(...c) { c.flat().forEach((x) => { x.parentNode = this; this.children.push(x); }); }
         insertBefore(child, ref) {
@@ -57,7 +61,9 @@ RSpec.describe 'dashboard step accordions' do
         });
       }
       class Doc {
-        constructor() { this.byId = {}; this.activeElement = null; }
+        constructor() { this.byId = {}; this.activeElement = null; this.listeners = {}; }
+        addEventListener(t, h) { (this.listeners[t] ||= []).push(h); }
+        fire(type) { (this.listeners[type] || []).forEach((h) => h({ type })); }
         reg(n) { if (n.id) this.byId[n.id] = n; n.children.forEach((c) => this.reg(c)); return n; }
         getElementById(id) { return this.byId[id] || null; }
         createElement(t) { return new Node(t); }
@@ -89,10 +95,12 @@ RSpec.describe 'dashboard step accordions' do
       const backendTab = mk('a', 'backend-tab', { hidden: true });
       root.append(steps, log, backendTab);
 
+      const noSelection = { isCollapsed: true, anchorNode: null, focusNode: null };
+      let selection = noSelection;
       const timers = [];
       const responses = input.polls.slice();
       const context = {
-        document, window: { location: { search: '?log=setup' } },
+        document, window: { location: { search: '?log=setup' }, getSelection: () => selection },
         URLSearchParams: class { get() { return 'setup'; } },
         fetch: () => Promise.resolve({ ok: true, json: async () => responses.shift() }),
         AbortController: class { constructor() { this.signal = {}; } abort() {} },
@@ -112,6 +120,14 @@ RSpec.describe 'dashboard step accordions' do
           ((input.userActions || {})[String(i)] || []).forEach(({ key, open }) => {
             const d = accordion(key); d.open = open; d.fire('toggle');
           });
+          const preOf = (which) => which === 'full' ? fullPre : which === 'error' ? document.getElementById('error') : accordion(which).querySelector('pre');
+          ((input.selections || {})[String(i)] || []).forEach((action) => {
+            if (action.select) { const pre = preOf(action.select); selection = { isCollapsed: false, anchorNode: pre, focusNode: pre }; }
+            if (action.collapse) { const pre = preOf(action.collapse); selection = { isCollapsed: true, anchorNode: pre, focusNode: pre }; }
+            if (action.span) { const pre = preOf(action.span); selection = { isCollapsed: false, anchorNode: null, focusNode: null, containsNode: (n) => n === pre }; }
+            if (action.clear) selection = noSelection;
+            document.fire('selectionchange');
+          });
           out.push({
             order: steps.children.map((c) => c.dataset.stepLog),
             open: Object.fromEntries(steps.children.map((c) => [c.dataset.stepLog, c.open])),
@@ -124,13 +140,16 @@ RSpec.describe 'dashboard step accordions' do
               const holder = c.querySelector('.step-log__actions');
               return [c.dataset.stepLog, { hidden: holder.hidden, actions: holder.children.map((f) => f.action), labels: holder.children.map((f) => f.children[0].textContent) }];
             })),
+            writes: Object.fromEntries(steps.children.filter((c) => c !== fullLog).map((c) => [c.dataset.stepLog, c.querySelector('pre').writes])),
+            fullWrites: fullPre.writes, errorWrites: document.getElementById('error').writes,
+            errorText: document.getElementById('error').textContent,
             fullText: fullPre.textContent, tabHidden: backendTab.hidden, fullOutcome: fullOutcome.textContent
           });
         }
         process.stdout.write(JSON.stringify(out));
       })();
     NODE
-    out, status = Open3.capture2('node', '-e', script, JSON.generate(polls: polls, userActions: user_actions, serverRendered: server_rendered))
+    out, status = Open3.capture2('node', '-e', script, JSON.generate(polls: polls, userActions: user_actions, serverRendered: server_rendered, selections: selections))
     raise "node failed: #{out}" unless status.success?
 
     JSON.parse(out)
@@ -140,8 +159,8 @@ RSpec.describe 'dashboard step accordions' do
     { 'key' => key, 'label' => key.capitalize, 'state' => state, 'duration_seconds' => duration }
   end
 
-  def poll(steps, logs = {}, backend: false, tail: '', total: nil, busy: true, resume: nil)
-    { 'presentation' => { 'state' => busy ? 'busy' : 'ready', 'busy' => busy, 'ready' => !busy, 'error' => '', 'steps' => steps, 'total' => total,
+  def poll(steps, logs = {}, backend: false, tail: '', total: nil, busy: true, resume: nil, error: '')
+    { 'presentation' => { 'state' => busy ? 'busy' : 'ready', 'busy' => busy, 'ready' => !busy, 'error' => error, 'steps' => steps, 'total' => total,
                           'resume' => resume,
                           'actions' => [], 'sections' => {}, 'headline' => 'h', 'summary' => 's',
                           'lead_action' => nil, 'environment_title' => 't', 'environment_submit' => 'x',
@@ -295,6 +314,109 @@ RSpec.describe 'dashboard step accordions' do
 
       expect(run_polls([poll(odd, busy: false, resume: resume)]).last['controls']['a b&c']['actions'])
         .to eq(['/workspaces/ws-1/resume?only=a%20b%26c'])
+    end
+  end
+
+  describe 'copying text out of a log' do
+    let(:running) { [step('gems', 'active'), step('app', 'pending')] }
+
+    it 'does not rewrite a log whose text has not changed, so a selection in it is never dropped' do
+      same = poll(running, { 'gems' => 'installing' }, tail: 'whole setup log', error: 'boom')
+
+      first, second, third = run_polls([same, same, same])
+
+      expect(third['writes']['gems']).to eq(first['writes']['gems'])
+      expect(third['fullWrites']).to eq(first['fullWrites'])
+      expect(third['errorWrites']).to eq(first['errorWrites'])
+      expect(third).to include('fullText' => 'whole setup log', 'errorText' => 'boom')
+      expect(second['writes']).to eq(first['writes'])
+    end
+
+    it 'leaves a log alone while text in it is selected, then catches up to the latest text once it is not' do
+      polls = [poll(running, { 'gems' => 'one' }), poll(running, { 'gems' => "one\ntwo" }),
+               poll(running, { 'gems' => "one\ntwo\nthree" })]
+
+      first, second, third = run_polls(polls, selections: { '0' => [{ 'select' => 'gems' }], '2' => [{ 'clear' => true }] })
+
+      expect(first['text']['gems']).to eq('one')
+      expect(second['text']['gems']).to eq('one')
+      expect(second['writes']['gems']).to eq(first['writes']['gems'])
+      expect(third['text']['gems']).to eq("one\ntwo\nthree")
+      expect(third['writes']['gems']).to eq(first['writes']['gems'] + 1)
+    end
+
+    it 'applies only the newest text when the selection ends, not each one it missed' do
+      polls = [poll(running, { 'gems' => 'a' }), poll(running, { 'gems' => 'b' }), poll(running, { 'gems' => 'c' }),
+               poll(running, { 'gems' => 'd' })]
+
+      snaps = run_polls(polls, selections: { '0' => [{ 'select' => 'gems' }], '3' => [{ 'clear' => true }] })
+
+      expect(snaps.map { |snap| snap['text']['gems'] }).to eq(%w(a a a d))
+      expect(snaps.last['writes']['gems']).to eq(snaps.first['writes']['gems'] + 1)
+    end
+
+    it 'only holds the log being read: another step keeps updating' do
+      polls = [poll(running, { 'gems' => 'g1', 'app' => 'a1' }), poll(running, { 'gems' => 'g2', 'app' => 'a2' })]
+
+      _, second = run_polls(polls, selections: { '0' => [{ 'select' => 'gems' }] })
+
+      expect(second['text']).to eq('gems' => 'g1', 'app' => 'a2')
+    end
+
+    it 'holds a log in the middle of a selection that spans several' do
+      polls = [poll(running, { 'gems' => 'g1', 'app' => 'a1' }), poll(running, { 'gems' => 'g2', 'app' => 'a2' })]
+
+      _, second = run_polls(polls, selections: { '0' => [{ 'span' => 'app' }] })
+
+      expect(second['text']).to eq('gems' => 'g2', 'app' => 'a1')
+    end
+
+    it 'does not hold a log for a caret with nothing selected' do
+      polls = [poll(running, { 'gems' => 'one' }), poll(running, { 'gems' => 'two' })]
+
+      _, second = run_polls(polls, selections: { '0' => [{ 'collapse' => 'gems' }] })
+
+      expect(second['text']['gems']).to eq('two')
+    end
+
+    it 'holds the full setup log and the error panel too' do
+      polls = [poll(running, {}, tail: 'log one', error: 'error one'), poll(running, {}, tail: 'log two', error: 'error two')]
+
+      selected_full = run_polls(polls, selections: { '0' => [{ 'select' => 'full' }] }).last
+      selected_error = run_polls(polls, selections: { '0' => [{ 'select' => 'error' }] }).last
+
+      expect(selected_full).to include('fullText' => 'log one', 'errorText' => 'error two')
+      expect(selected_error).to include('fullText' => 'log two', 'errorText' => 'error one')
+    end
+
+    it 'does not close a step on completion while text in its log is selected' do
+      one = poll([step('gems', 'active'), step('app', 'pending')], { 'gems' => 'installing' })
+      two = poll([step('gems', 'complete', 1.5), step('app', 'active')], { 'gems' => 'installing' })
+
+      _, second = run_polls([one, two], selections: { '0' => [{ 'select' => 'gems' }] })
+
+      expect(second['open']['gems']).to eq(true)
+      expect(second['open']['app']).to eq(true)
+    end
+
+    it 'closes the completed step once the selection is gone' do
+      one = poll([step('gems', 'active'), step('app', 'pending')], { 'gems' => 'installing' })
+      two = poll([step('gems', 'complete', 1.5), step('app', 'active')], { 'gems' => 'installing' })
+      three = poll([step('gems', 'complete', 1.5), step('app', 'active')], { 'gems' => 'installing' })
+
+      _, second, third = run_polls([one, two, three], selections: { '0' => [{ 'select' => 'gems' }], '2' => [{ 'clear' => true }] })
+
+      expect(second['open']['gems']).to eq(true)
+      expect(third['open']['gems']).to eq(false)
+    end
+
+    it 'still updates a log normally when nothing is selected' do
+      polls = [poll(running, { 'gems' => 'one' }, tail: 'a'), poll(running, { 'gems' => 'two' }, tail: 'b')]
+
+      _, second = run_polls(polls)
+
+      expect(second['text']['gems']).to eq('two')
+      expect(second['fullText']).to eq('b')
     end
   end
 end

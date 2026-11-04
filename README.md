@@ -108,6 +108,14 @@ everyday tail would cut off. Steps that did not fail keep the small tail, and a 
 merely running does too. The full files stay on disk under the workspaces home (`logs/`), and
 every tail is secret-scrubbed first.
 
+### Copying from a log
+
+The page refreshes itself, and replacing a log's text drops any selection inside it. So it never
+rewrites a log whose text has not changed, and while part of a log (a step's output, the full
+setup log, the web server log or the error panel) is selected, its new text waits and is applied
+once, when the selection ends. Only the log being read waits; everything else keeps updating. A
+step that finishes while you have text selected in it stays open until you let go.
+
 ### Step timings
 
 Per-step durations are persisted in seconds in workspace step status JSON, so they
