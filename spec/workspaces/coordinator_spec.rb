@@ -405,6 +405,98 @@ RSpec.describe Workspaces::Coordinator do
       expect(logs['gems']['truncated']).to eq(true)
     end
 
+    describe 'when something has failed' do
+      let(:state) { Workspaces::StateStore.new(Workspaces::Config.state_file) }
+      let(:long_failure) do
+        out = Array.new(400) { |i| "Installing gem-#{i} (1.#{i}.0) with native extensions\n" }.join
+        out << "rake aborted!\nNoMethodError: undefined method `foo' for nil:NilClass\n"
+        out << Array.new(150) { |i| "/app/vendor/bundle/gems/some-gem-1.2.3/lib/deep/path#{i}.rb:#{i}:in `block in call'\n" }.join
+        out << "Tasks: TOP => db:migrate\n(See full trace by running task with --trace)\n"
+      end
+
+      def snapshot_steps(status, step_states)
+        steps = step_states.map { |key, step_state| { 'key' => key, 'label' => key.capitalize, 'state' => step_state } }
+        state.set(workspace.id, 'status' => status, 'steps' => steps, 'last_error' => 'Command exited with status 1; see setup log')
+        described_class.new.snapshot(workspace.id)
+      end
+
+      it 'keeps the whole error and backtrace of the step that failed, which the normal tail would cut off' do
+        Workspaces::Config.step_log_path(workspace.id, 'gems').write(long_failure)
+
+        text = snapshot_steps('error', 'gems' => 'failed').fetch('step_logs').fetch('gems').fetch('text')
+
+        expect(text).to include('Installing gem-399', 'NoMethodError: undefined method', '(See full trace')
+        expect(text.lines.length).to be > Workspaces::Config::STEP_LOG_LINES
+      end
+
+      it 'still gives a step that did not fail only the normal tail, even in a workspace that failed' do
+        Workspaces::Config.step_log_path(workspace.id, 'gems').write(long_failure)
+        Workspaces::Config.step_log_path(workspace.id, 'ready').write(long_failure)
+
+        logs = snapshot_steps('error', 'gems' => 'failed', 'ready' => 'complete').fetch('step_logs')
+
+        expect(logs['ready']['text'].lines.length).to be <= Workspaces::Config::STEP_LOG_LINES
+        expect(logs['ready']['truncated']).to eq(true)
+        expect(logs['gems']['text'].lines.length).to be > logs['ready']['text'].lines.length
+      end
+
+      it 'treats the step that was running when the run was interrupted as the one that failed' do
+        Workspaces::Config.step_log_path(workspace.id, 'gems').write(long_failure)
+
+        text = snapshot_steps('preparing', 'gems' => 'active').fetch('step_logs').fetch('gems').fetch('text')
+
+        expect(text.lines.length).to be > Workspaces::Config::STEP_LOG_LINES
+      end
+
+      it 'does not enlarge a step that is simply running' do
+        Workspaces::Config.step_log_path(workspace.id, 'gems').write(long_failure)
+        state.set(workspace.id, 'status' => 'preparing', 'steps' => [{ 'key' => 'gems', 'label' => 'Gems', 'state' => 'active' }])
+        lock = Workspaces::WorkspaceLock.acquire(workspace.id, operation: 'prepare')
+
+        text = described_class.new.snapshot(workspace.id).fetch('step_logs').fetch('gems').fetch('text')
+        lock.close
+
+        expect(text.lines.length).to be <= Workspaces::Config::STEP_LOG_LINES
+      end
+
+      it 'is still bounded, and says so when even the failure allowance was exceeded' do
+        huge = ("x" * 99 + "\n") * (Workspaces::Config::FAILURE_LOG_LINES + 500)
+        Workspaces::Config.step_log_path(workspace.id, 'gems').write(huge)
+
+        logs = snapshot_steps('error', 'gems' => 'failed').fetch('step_logs').fetch('gems')
+
+        expect(logs['text'].lines.length).to be <= Workspaces::Config::FAILURE_LOG_LINES
+        expect(logs['text'].bytesize).to be <= Workspaces::Config::FAILURE_LOG_BYTES
+        expect(logs['truncated']).to eq(true)
+      end
+
+      it 'scrubs secrets from the larger tail as well' do
+        Workspaces::Config.step_log_path(workspace.id, 'gems').write(long_failure + "token=private-failure\n")
+
+        text = snapshot_steps('error', 'gems' => 'failed').fetch('step_logs').fetch('gems').fetch('text')
+
+        expect(text).to include('token=[FILTERED]')
+        expect(text).not_to include('private-failure')
+      end
+
+      it 'gives the setup log and the server log the larger tail after a failure, and the normal one otherwise' do
+        File.write(Workspaces::Config.setup_log_path(workspace.id), long_failure)
+        File.write(Workspaces::Config.backend_log_path(workspace.id), long_failure)
+        coordinator = described_class.new
+        state.set(workspace.id, 'status' => 'error', 'steps' => [])
+
+        failed_setup = coordinator.snapshot(workspace.id).fetch('log_tail')
+        failed_backend = coordinator.snapshot(workspace.id, log: 'backend').fetch('log_tail')
+        state.set(workspace.id, 'status' => 'ready', 'steps' => [])
+        ready_setup = coordinator.snapshot(workspace.id).fetch('log_tail')
+
+        expect(failed_setup.lines.length).to be > Workspaces::Config::SAFE_LOG_LINES
+        expect(failed_setup).to include('NoMethodError: undefined method')
+        expect(failed_backend.lines.length).to be > Workspaces::Config::SAFE_LOG_LINES
+        expect(ready_setup.lines.length).to be <= Workspaces::Config::SAFE_LOG_LINES
+      end
+    end
+
     it 'reports truncated false for a short step log' do
       Workspaces::Config.step_log_path(workspace.id, 'gems').write("short\n")
 

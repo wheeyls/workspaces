@@ -13,6 +13,13 @@ module Workspaces
     # Each step shows its own tail, so the per-step bounds are smaller than the combined log's.
     STEP_LOG_BYTES = 6 * 1024
     STEP_LOG_LINES = 80
+    # What the page gets once something has failed. The error is at the end of the output, but a failing
+    # command prints a backtrace of a hundred lines or more after it, and bundler, yarn and rails print
+    # their progress before it, so the everyday tail cuts the message off. Only the step that failed (and
+    # the setup and server logs of a workspace that failed) get this; everything else stays small, because
+    # every poll sends these.
+    FAILURE_LOG_BYTES = 128 * 1024
+    FAILURE_LOG_LINES = 2000
     DEFAULT_HOME = File.expand_path('~/.workspaces')
     DEFAULT_SUBDOMAIN_PREFIX = 'ws-'
     DEFAULT_FRONT_DOOR_PORT = 4747
