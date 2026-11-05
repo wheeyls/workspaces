@@ -6,6 +6,7 @@ RSpec.describe Workspaces::Config do
     expect(described_class.preview_workspace_id('ws-checkout-a12bc34d.localhost')).to eq('checkout-a12bc34d')
     expect(described_class.preview_workspace_id('ws-checkout-a12bc34d.localhost.evil.test')).to be_nil
     expect(described_class.dashboard_url('checkout-a12bc34d')).to eq('http://localhost:4747/workspaces/checkout-a12bc34d')
+    expect(described_class.index_url).to eq('http://localhost:4747/workspaces')
   end
 
   it 'supports DNS-safe custom prefixes' do

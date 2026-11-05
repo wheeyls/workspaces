@@ -16,7 +16,8 @@ RSpec.describe 'dashboard environment rows' do
         this.hidden = !!opts.hidden; this.disabled = false; this.value = opts.value || ''; this.type = opts.type || 'text';
         this.name = opts.name || ''; this.placeholder = opts.placeholder || ''; this.autocomplete = '';
         this.checked = !!opts.checked; this.textContent = opts.textContent || '';
-        this.classList = { add: () => {}, remove: () => {} };
+        this.classes = new Set();
+        this.classList = { add: (c) => this.classes.add(c), remove: (c) => this.classes.delete(c), contains: (c) => this.classes.has(c) };
       }
       get innerHTML() { return this._html || ''; }
       set innerHTML(html) {
@@ -279,6 +280,19 @@ RSpec.describe 'dashboard environment rows' do
       expect(result['status']).to eq('Preset loaded into draft only. Use Save & restart to apply changes.')
       expect(result['submits']).to eq(0)
       expect(result['pressed']).to eq(%w(true false))
+    end
+
+    it 'marks the chosen preset as selected, not as a success, and in step with aria-pressed' do
+      result = run({ 'rows' => rows, 'presets' => presets }, <<~JS)
+        click(dom.presetButtons[0]);
+        out.selectedClass = dom.presetButtons.map((b) => b.classList.contains('button--selected'));
+        out.successClass = dom.presetButtons.map((b) => b.classList.contains('button--success'));
+        out.pressed = dom.presetButtons.map((b) => b.attributes['aria-pressed']);
+      JS
+
+      expect(result['selectedClass']).to eq([true, false])
+      expect(result['selectedClass'].map(&:to_s)).to eq(result['pressed'])
+      expect(result['successClass']).to eq([false, false])
     end
 
     it 'matches on the visible rows alone, so adding a secret does not unselect a preset' do

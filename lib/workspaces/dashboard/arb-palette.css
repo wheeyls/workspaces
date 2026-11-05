@@ -1,0 +1,82 @@
+/* Arb design system, Native v1: tokens/palette.css from ~/code/arb-design-system (commit 88765ca), copied unchanged below this note.
+   Do not edit by hand. To update, copy the new palette.css over everything after this comment. */
+/* Source: palette.tokens.json. Opaque sRGB pairings only; see README.md. */
+:root {
+  --arb-mark-shell: #123A3D;
+  --arb-mark-river: #58D9C4;
+  --arb-mark-brackets: #F4F1E8;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --arb-bg: #0B171A;
+  --arb-surface: #12262B;
+  --arb-elevated: #1B343B;
+  --arb-text: #F4F1E8;
+  --arb-muted: #B4C3C8;
+  --arb-accent: #58D9C4;
+  --arb-on-accent: #073A35;
+  --arb-steel: #ABC8D2;
+  --arb-border: #6F8991;
+  --arb-focus: #76CCE5;
+  --arb-success: #9DD48E;
+  --arb-warning: #F1C56B;
+  --arb-error: #FF9B96;
+  --arb-action-hover: #78E3D0;
+  --arb-action-pressed: #3CBDA9;
+  --arb-surface-hover: #1B343B;
+  --arb-surface-pressed: #203A41;
+  --arb-selected-bg: #173E40;
+  --arb-selected-border: #58D9C4;
+  --arb-disabled-bg: #1B343B;
+  --arb-disabled-fg: #91A5AC;
+  --arb-disabled-border: #6F8991;
+  --arb-success-bg: #173322;
+  --arb-warning-bg: #3E321A;
+  --arb-error-bg: #40262A;
+  --arb-error-hover: #FFB4AE;
+  --arb-error-pressed: #EE817D;
+  --arb-on-error: #351415;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --arb-bg: #F5F2E9;
+  --arb-surface: #FFFFFF;
+  --arb-elevated: #E8EEEC;
+  --arb-text: #123A3D;
+  --arb-muted: #4B676E;
+  --arb-accent: #0A766F;
+  --arb-on-accent: #FFFFFF;
+  --arb-steel: #496B79;
+  --arb-border: #71868B;
+  --arb-focus: #246C89;
+  --arb-success: #2D6D45;
+  --arb-warning: #8A5A10;
+  --arb-error: #B64344;
+  --arb-action-hover: #08655F;
+  --arb-action-pressed: #07554F;
+  --arb-surface-hover: #E8EEEC;
+  --arb-surface-pressed: #E1EFEA;
+  --arb-selected-bg: #E1EFEA;
+  --arb-selected-border: #0A766F;
+  --arb-disabled-bg: #E1E7E5;
+  --arb-disabled-fg: #4E656B;
+  --arb-disabled-border: #71868B;
+  --arb-success-bg: #E5F1E6;
+  --arb-warning-bg: #FBF0D7;
+  --arb-error-bg: #FBE9E7;
+  --arb-error-hover: #A03638;
+  --arb-error-pressed: #8B2C2E;
+  --arb-on-error: #FFFFFF;
+}
+
+/* Optional descriptive aliases. Canonical names mirror JSON keys. */
+[data-theme] {
+  --arb-canvas: var(--arb-bg);
+  --arb-raised: var(--arb-elevated);
+  --arb-text-secondary: var(--arb-muted);
+  --arb-river: var(--arb-accent);
+  --arb-on-river: var(--arb-on-accent);
+  --arb-boundary: var(--arb-border);
+}

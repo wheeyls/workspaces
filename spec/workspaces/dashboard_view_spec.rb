@@ -668,6 +668,23 @@ RSpec.describe Workspaces::DashboardView do
     expect(around_tabs.scan('<details').size).to eq(around_tabs.scan('</details').size)
   end
 
+  it 'marks the lead with its state so a failed or interrupted run can be accented, and keeps the page to a readable width' do
+    failed = described_class.render(snapshot.merge('status' => 'error', 'last_error' => 'boom'))
+    interrupted = described_class.render(snapshot.merge('status' => 'interrupted'))
+    ready = described_class.render(snapshot.merge('status' => 'ready'))
+
+    expect(failed).to match(/<section[^>]*id="lead"[^>]*data-state="error"/)
+    expect(interrupted).to match(/<section[^>]*id="lead"[^>]*data-state="interrupted"/)
+    expect(ready).to match(/<section[^>]*id="lead"[^>]*data-state="ready"/)
+    expect(failed).to include('<main class="dashboard dashboard--narrow"')
+  end
+
+  it 'keeps the workspace list at its full width, since it holds a table' do
+    main_tag = described_class.index([])[/<main[^>]*>/]
+
+    expect(main_tag).to eq('<main class="dashboard">')
+  end
+
   it 'shows the technical details when setup has failed so the cause is visible' do
     html = described_class.render(snapshot.merge('status' => 'error', 'operation' => 'prepare',
                                                  'last_error' => 'Build failed'))

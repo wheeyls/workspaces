@@ -40,6 +40,12 @@ module Workspaces
 
     PREVIEW_STATUS_KEYS = %w(state busy ready headline summary progress lead_action current_preset sleep open).freeze
     PREVIEW_ERROR = 'Setup failed. Open settings for the full log.'.freeze
+    # The Arb palette (dashboard/arb-palette.css) defines its colours per theme, selected by data-theme on the root
+    # element. The theme follows the visitor's operating-system setting, with dark when there is none. A tiny script
+    # in the head sets it before anything paints, so a light-mode visitor never sees a dark flash; a page without
+    # script stays dark, which the palette and the stylesheet are both tested in.
+    THEME_SCRIPT = 'document.documentElement.dataset.theme=' \
+                   "window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'".freeze
 
     # What the card polls for on a preview host, where the workspace's own pages share the origin.
     # Only what the card draws: no log, no steps, no environment and no error text.
@@ -58,18 +64,15 @@ module Workspaces
       new({}).render_checkout_authentication_error(path)
     end
 
+    # The Arb Previews icon from the Arb design system (arb-previews/favicon.svg, unchanged), tuned for 16 pixels.
+    # It carries no environment signal: the old icon was blue on localhost and gold when hosted, and the kit
+    # forbids recolouring or badging its marks, so the page itself (the address bar, the host in the URL) is how
+    # a localhost dashboard is told from a hosted one.
+    # The Arb Previews icon, from the design system (arb-previews/favicon.svg, copied unchanged). It is the 16 px
+    # tuned vector, so it is served as it is: the kit forbids recolouring or badging it, which means the tab no
+    # longer shows whether this dashboard is the local one or a hosted one.
     def self.favicon
-      local = Config.public_uri.host.match?(/(?:\A|\.)localhost\z/i)
-      color = local ? '#4f8dff' : '#f1bb53'
-      <<~SVG
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Workspaces">
-          <rect x="3" y="3" width="58" height="58" rx="13" fill="#0f1524"/>
-          <rect x="11" y="13" width="42" height="38" rx="5" fill="none" stroke="#{color}" stroke-width="4"/>
-          <path d="M11 25h42M32 25v26" fill="none" stroke="#{color}" stroke-width="4"/>
-          <circle cx="18" cy="19" r="2" fill="#{color}"/>
-          <circle cx="25" cy="19" r="2" fill="#{color}"/>
-        </svg>
-      SVG
+      File.read(File.join(__dir__, 'dashboard/arb-previews-favicon.svg'), encoding: 'UTF-8')
     end
 
     def initialize(snapshot, preview: false)
@@ -110,11 +113,14 @@ module Workspaces
     end
 
     def document(title, body)
-      css = File.read(File.join(__dir__, 'dashboard/styles.css'), encoding: 'UTF-8')
+      palette = File.read(File.join(__dir__, 'dashboard/arb-palette.css'), encoding: 'UTF-8')
+      css = palette + File.read(File.join(__dir__, 'dashboard/styles.css'), encoding: 'UTF-8')
       script = File.read(File.join(__dir__, 'dashboard/app.js'), encoding: 'UTF-8') +
                File.read(File.join(__dir__, 'dashboard/environment.js'), encoding: 'UTF-8')
-      '<!doctype html><html lang="en"><head><meta charset="utf-8">' \
+      '<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8">' \
         '<meta name="viewport" content="width=device-width, initial-scale=1">' \
+        '<meta name="color-scheme" content="dark light">' \
+        "<script>#{THEME_SCRIPT}</script>" \
         '<link rel="icon" type="image/svg+xml" href="/favicon.svg">' \
         "<title>#{escape(title)}</title><style>#{css}</style></head>" \
         "<body>#{body}<script>#{script}</script></body></html>"
@@ -317,6 +323,11 @@ module Workspaces
 
     def settings_href
       @preview ? Config.settings_url(@id) : "/workspaces/#{@id}/settings"
+    end
+
+    # Back to the list of every workspace, from the card.
+    def index_href
+      @preview ? Config.index_url : '/workspaces'
     end
 
     # Where the card's start form posts. A shared card with presets saves the chosen one through the

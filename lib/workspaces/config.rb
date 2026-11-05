@@ -151,6 +151,12 @@ module Workspaces
       "#{public_origin}/workspaces/#{validate_id!(id)}"
     end
 
+    # The list of every workspace. A card on a preview host is a different origin from the dashboard, so it
+    # needs the whole URL; a card on the dashboard host can use the path.
+    def self.index_url
+      "#{public_origin}/workspaces"
+    end
+
     def self.settings_url(id)
       "#{dashboard_url(id)}/settings"
     end

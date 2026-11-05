@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" role="img" aria-labelledby="title desc">
+  <title id="title">Arb Previews</title>
+  <desc id="desc">A browser window with two preview panes. Original vector artwork in the Arb Native palette. Optically tuned for 16 pixels.</desc>
+  <rect id="tile" width="16" height="16" rx="4" fill="#123A3D"/>
+  <g id="preview-window" fill="none" stroke-linejoin="round">
+    <rect id="window-frame" x="2.5" y="3.5" width="11" height="9" rx="1.5" stroke="#F4F1E8" stroke-width="1.5"/>
+    <path id="browser-header" d="M2.5 6.5H13.5" stroke="#F4F1E8" stroke-width="1.5"/>
+    <path id="preview-divider" d="M8 7.25V11.75" stroke="#58D9C4" stroke-width="1.5"/>
+    <g id="browser-controls" fill="#58D9C4"><circle cx="4.5" cy="5" r="0.5"/><circle cx="6.5" cy="5" r="0.5"/></g>
+  </g>
+</svg>

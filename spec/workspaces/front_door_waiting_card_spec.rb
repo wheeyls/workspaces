@@ -47,6 +47,13 @@ RSpec.describe Workspaces::FrontDoor, 'the waiting card on a preview host' do
       expect(page).not_to include("action=\"/workspaces/#{workspace.id}/")
     end
 
+    it 'links to all workspaces on the dashboard host, because the preview host is a different origin' do
+      page = request('/', headers: html).last.join
+
+      expect(page).to include("href=\"#{Workspaces::Config.index_url}\"")
+      expect(page).not_to match(%r{<header class="card__header">.*href="/workspaces".*</header>}m)
+    end
+
     it 'keeps the old behaviour for requests that are not a browser opening a page' do
       expect(request('/api/things').first).to eq(303)
       expect(request('/products', headers: html.merge('HTTP_SEC_FETCH_MODE' => 'cors')).first).to eq(303)

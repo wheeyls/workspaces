@@ -54,6 +54,7 @@ RSpec.describe 'dashboard lead rendering' do
       const root = document.reg(new Node('main', { id: 'workspace', dataset: {
         id: 'ws-1', busy: 'false' } }));
       const mk = (tag, id, o = {}) => document.reg(new Node(tag, { id, ...o }));
+      const lead = mk('section', 'lead', { dataset: { state: 'idle' } });
       const status = mk('h2', 'status'), summary = mk('p', 'summary');
       const buildProgress = mk('div', 'build-progress', { hidden: true });
       const bar = mk('div', 'progress-bar'); const fill = mk('span', 'progress-fill');
@@ -72,7 +73,7 @@ RSpec.describe 'dashboard lead rendering' do
       const srcMsg = mk('p', 'source-update-message');
       const log = mk('pre', 'log'); log.clientHeight = 1; log.scrollHeight = 1; log.scrollTop = 0;
       const updated = mk('time', 'updated');
-      root.append(status, summary, buildProgress, bar, fill, barStep, barPercent, barEta, activity, elapsed, preview, leadAction, message, error, errorPanel,
+      root.append(lead, status, summary, buildProgress, bar, fill, barStep, barPercent, barEta, activity, elapsed, preview, leadAction, message, error, errorPanel,
         connection, envTitle, presetBadge, progress, actions, srcMsg, log, updated);
 
       const timers = []; const responses = input.polls.slice();
@@ -94,7 +95,7 @@ RSpec.describe 'dashboard lead rendering' do
           if (at < 0) throw new Error('no poll scheduled');
           const poll = timers.splice(at, 1)[0]; await poll.cb(); await new Promise((r) => setImmediate(r));
           snaps.push({
-            headline: status.textContent, summary: summary.textContent,
+            leadState: lead.dataset.state, headline: status.textContent, summary: summary.textContent,
             barHidden: buildProgress.hidden, barNow: bar.attributes['aria-valuenow'], barFill: fill.style.inlineSize,
             barStep: barStep.textContent, barPercent: barPercent.textContent, barEta: barEta.textContent,
             barSlow: bar.dataset.slow, barText: bar.attributes['aria-valuetext'],
@@ -124,6 +125,12 @@ RSpec.describe 'dashboard lead rendering' do
     { 'presentation' => presentation, 'message' => 'm', 'source_update_message' => '', 'editable_environment' => {},
       'log_source' => 'setup', 'log_tail' => '', 'updated_at' => 'now',
       'prepare_started_at' => '2026-10-05T00:00:00Z', 'completed_at' => '2026-10-05T00:01:00Z' }
+  end
+
+  it 'keeps the lead panel\'s data-state on the current state, which the styles use for the failure accent' do
+    snaps = run_scenarios(initial_state: 'busy', polls: [poll('busy'), poll('error'), poll('interrupted'), poll('ready')])
+
+    expect(snaps.map { |snap| snap['leadState'] }).to eq(%w(busy error interrupted ready))
   end
 
   it 'moves from setting up to ready without a reload: new headline and the Open button' do
