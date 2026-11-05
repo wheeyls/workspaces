@@ -45,6 +45,7 @@ RSpec.describe 'dashboard lead rendering' do
 
       class Doc {
         constructor() { this.byId = {}; this.activeElement = null; }
+        addEventListener() {}
         reg(n) { if (n.id) this.byId[n.id] = n; n.children.forEach((c) => this.reg(c)); return n; }
         getElementById(id) { return this.byId[id] || null; }
         createElement(t) { return new Node(t); }

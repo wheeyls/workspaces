@@ -274,9 +274,10 @@ module Workspaces
         'steps' => entry.fetch('steps', []), 'total_seconds' => entry['total_seconds'],
         'resume' => resume_info(id, entry),
         'estimates' => entry.fetch('estimates', {}),
-        'step_logs' => include_log && log == 'setup' ? step_logs(id, entry.fetch('steps', [])) : {},
+        'step_logs' => include_log && log == 'setup' ? step_logs(id, entry.fetch('steps', []), status) : {},
         'backend_log_available' => backend_log_available?(id),
-        'log_tail' => include_log ? log_tail(id, log) : '', 'log_source' => log, 'port' => entry['port'],
+        'log_tail' => include_log ? log_tail(id, log, failed: failed_status?(status)) : '', 'log_source' => log,
+        'port' => entry['port'],
         'environment_keys' => environment_keys(id),
         'editable_environment' => editable_environment(id),
         'secret_names' => secret_names(id),
@@ -434,28 +435,40 @@ module Workspaces
       WorkspaceLock.held?(id)
     end
 
-    def log_tail(id, log)
+    # Something went wrong, so the logs are worth reading in full: the larger tail is for these states.
+    def failed_status?(status)
+      %w(error interrupted).include?(status)
+    end
+
+    def log_tail(id, log, failed: false)
       path = log == 'backend' ? Config.backend_log_path(id, create: false) : Config.setup_log_path(id, create: false)
       return '' unless path.file?
 
-      raw = File.open(path, 'rb') do |file|
-        file.seek(-Config::SAFE_LOG_BYTES, IO::SEEK_END) if file.size > Config::SAFE_LOG_BYTES
-        file.read
-      end
-      scrub(raw, id: id).lines.last(Config::SAFE_LOG_LINES).join
+      bytes = failed ? Config::FAILURE_LOG_BYTES : Config::SAFE_LOG_BYTES
+      lines = failed ? Config::FAILURE_LOG_LINES : Config::SAFE_LOG_LINES
+      tail_file(path, id, bytes: bytes, lines: lines).fetch('text')
     end
 
     # Output for each recipe step, keyed by step id. Only steps that have written something
     # appear, so a pending step has no entry and the page can show it as not started.
-    def step_logs(id, steps)
+    def step_logs(id, steps, status = nil)
       steps.each_with_object({}) do |step, logs|
         path = Config.step_log_path(id, step['key'], create: false)
         next unless path.file?
 
-        logs[step['key']] = tail_file(path, id, bytes: Config::STEP_LOG_BYTES, lines: Config::STEP_LOG_LINES)
+        failed = failed_step?(step, status)
+        logs[step['key']] = tail_file(path, id, bytes: failed ? Config::FAILURE_LOG_BYTES : Config::STEP_LOG_BYTES,
+                                                lines: failed ? Config::FAILURE_LOG_LINES : Config::STEP_LOG_LINES)
       end
     rescue ArgumentError
       {}
+    end
+
+    # The step that failed, or the one a run was cut off in. A step that is merely running is not one.
+    def failed_step?(step, status)
+      return true if step['state'] == 'failed'
+
+      status == 'interrupted' && step['state'] == 'active'
     end
 
     def backend_log_available?(id)

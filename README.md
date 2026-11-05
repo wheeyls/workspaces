@@ -95,6 +95,27 @@ workspace's directory with the workspace's environment, and exits with the comma
   restart, rebuild, PR update or removal holding the lock still takes the preview offline, since
   those replace the server or its files.
 
+### Log tails
+
+The dashboard shows the end of each log, not all of it. Normally that is the last 6 KB or 80
+lines of a step's output, and 8 KB or 100 lines of the setup and web server logs, which keeps
+every poll small.
+
+When something has failed (a step failed, or a run was interrupted) the page gets far more of
+what matters: the failed step's output, and the setup and server logs, are sent as the last
+**128 KB or 2000 lines**. That is enough for the error and the backtrace after it, which the
+everyday tail would cut off. Steps that did not fail keep the small tail, and a step that is
+merely running does too. The full files stay on disk under the workspaces home (`logs/`), and
+every tail is secret-scrubbed first.
+
+### Copying from a log
+
+The page refreshes itself, and replacing a log's text drops any selection inside it. So it never
+rewrites a log whose text has not changed, and while part of a log (a step's output, the full
+setup log, the web server log or the error panel) is selected, its new text waits and is applied
+once, when the selection ends. Only the log being read waits; everything else keeps updating. A
+step that finishes while you have text selected in it stays open until you let go.
+
 ### Step timings
 
 Per-step durations are persisted in seconds in workspace step status JSON, so they

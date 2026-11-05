@@ -47,7 +47,7 @@ RSpec.describe 'card page script' do
       const fetched = [];
       const timers = []; const responses = input.polls.slice();
       const context = {
-        document: { getElementById: (id) => byId[id] || null, createElement: (t) => new Node(t), activeElement: null },
+        document: { getElementById: (id) => byId[id] || null, createElement: (t) => new Node(t), activeElement: null, addEventListener() {} },
         window: { location: { search: '', pathname: '/workspaces/ws-1', reload() { reloads += 1; } } },
         URLSearchParams: class { get() { return null; } },
         fetch: (url) => { fetched.push(url); return Promise.resolve({ ok: true, json: async () => responses.shift() }); },
