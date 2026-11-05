@@ -1,9 +1,9 @@
-<main class="dashboard" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>">
+<main class="dashboard dashboard--narrow" id="workspace" data-id="<%= @id %>" data-status="<%= field('status') %>" data-started="<%= field('prepare_started_at') %>" data-completed="<%= field('completed_at') %>" data-busy="<%= @presentation['busy'] %>">
   <header class="dashboard__header">
     <div class="dashboard__title"><p class="eyebrow">Managed workspace</p><h1 class="mono-title"><%= @id %></h1></div>
     <div class="header-actions"><a class="button button--subtle" href="/workspaces/<%= @id %>">Back to workspace</a><a class="button button--subtle" href="/workspaces">All workspaces</a></div>
   </header>
-  <section class="status-panel lead" id="lead" data-section="lead" aria-labelledby="status" <%= 'hidden' unless section?('lead') %>>
+  <section class="status-panel lead" id="lead" data-section="lead" data-state="<%= escape(@presentation['state']) %>" aria-labelledby="status" <%= 'hidden' unless section?('lead') %>>
     <div class="lead__text">
       <h2 id="status" role="status"><%= escape(@presentation['headline']) %></h2>
       <p id="summary" class="lead__summary"><%= escape(@presentation['summary']) %></p>

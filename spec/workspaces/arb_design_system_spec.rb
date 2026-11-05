@@ -85,6 +85,12 @@ RSpec.describe 'Arb design system' do
     ['error callout edge against the surface around it', 'error', 'surface', 3.0],
     ['progress bar edge', 'border', 'elevated', 3.0], ['progress fill', 'accent', 'elevated', 3.0],
     ['slow progress fill', 'warning', 'elevated', 3.0],
+    ['interrupted accent bar against the panel', 'warning', 'surface', 3.0], ['error accent bar against the panel', 'error', 'surface', 3.0],
+    ['interrupted callout text', 'text', 'warning-bg', 4.5], ['interrupted callout secondary text', 'muted', 'warning-bg', 4.5],
+    ['interrupted callout heading', 'warning', 'warning-bg', 4.5], ['failed step bar against its tint', 'error', 'error-bg', 3.0],
+    ['field edge against the recessed field', 'border', 'bg', 3.0], ['checked checkbox against the field', 'accent', 'bg', 3.0],
+    ['tick on the checked checkbox', 'on-accent', 'accent', 4.5], ['disabled checkbox edge', 'disabled-border', 'disabled-bg', 3.0],
+    ['disabled checkbox tick', 'disabled-fg', 'disabled-bg', 3.0], ['quiet panel edge is decorative, so the panel against the page', 'surface', 'bg', 1.0],
     ['step icon ring', 'muted', 'surface', 3.0], ['step icon, running', 'accent', 'surface', 3.0],
     ['step icon, complete', 'success', 'surface', 3.0], ['step icon, failed', 'error', 'surface', 3.0],
     ['check mark on the complete icon', 'bg', 'success', 3.0], ['cross on the failed icon', 'bg', 'error', 3.0]

@@ -68,7 +68,7 @@ input:not([type='checkbox']):not([type='radio']), select {
   block-size: var(--control-height);
   padding-inline: var(--space-3);
   color: var(--text);
-  background: var(--bg-elevated);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   font-family: var(--font-mono);
@@ -80,9 +80,10 @@ summary { cursor: pointer; color: var(--muted); }
 .workspace-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 /* The server-rendered action forms live in a wrapper; let them flow with the sibling button. */
 #actions { display: contents; }
-.setup-error { --panel-padding: var(--space-4); padding: var(--panel-padding); border-color: var(--arb-error); background: var(--arb-error-bg); }
+/* Two classes, so it beats the shared panel rule further down, which would otherwise put the full outline back. */
+.error-panel.setup-error { --panel-padding: var(--space-4); padding: var(--panel-padding); border: 0; border-inline-start: 4px solid var(--arb-error); border-radius: var(--radius-control); background: var(--arb-error-bg); }
 .setup-error h3, .setup-error h2 { color: var(--arb-error); margin-block-start: 0; }
-.setup-error pre { background: var(--bg-elevated); }
+.setup-error pre { background: var(--bg); }
 .step-outcome { margin-inline-start: auto; font-size: 12px; }
 /* The dot beside the current step is dropped: a pulse that never stops says "working" whether or not anything is
    happening. The step's name, its number and the bar are what show progress. */
@@ -113,6 +114,8 @@ a {
   display: grid;
   gap: var(--space-6);
 }
+
+.dashboard--narrow { inline-size: min(100% - var(--space-6), 60rem); }
 
 .dashboard__header {
   display: flex;
@@ -162,7 +165,7 @@ h1 {
 .log-panel,
 .noscript-note {
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  border: 1px solid var(--arb-elevated);
   border-radius: var(--radius);
   padding: var(--panel-padding);
 }
@@ -187,7 +190,30 @@ h1 {
 .lead { gap: var(--space-4); padding-block: var(--space-8); }
 .lead__text { display: grid; gap: var(--space-2); }
 .lead h2 { font-size: 24px; line-height: 1.25; }
-.lead__summary { max-inline-size: 38rem; color: var(--muted); font-size: 15px; line-height: 1.5; }
+.lead__summary { max-inline-size: 38rem; color: var(--text); font-size: 16px; line-height: 1.5; }
+/* A run that failed or was cut off says so three ways: the words, a glyph beside the headline, and an accent
+   bar on the panel. The colour is the accent, never the only signal. Interrupted is a warning, not an error. */
+.lead[data-state='error'], .lead[data-state='interrupted'] { border-inline-start: 4px solid var(--arb-error); }
+.lead[data-state='interrupted'] { border-inline-start-color: var(--arb-warning); }
+.lead[data-state='error'] h2::before, .lead[data-state='interrupted'] h2::before {
+  content: '!';
+  content: '!' / '';
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.2em;
+  block-size: 1.2em;
+  margin-inline-end: var(--space-3);
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  color: var(--arb-error);
+  font-size: 0.8em;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: 0.08em;
+}
+.lead[data-state='interrupted'] h2::before { color: var(--arb-warning); }
+.lead[data-state='interrupted'] .error-panel.setup-error { border-inline-start-color: var(--arb-warning); background: var(--arb-warning-bg); }
+.lead[data-state='interrupted'] .setup-error h3, .lead[data-state='interrupted'] .setup-error h2 { color: var(--arb-warning); }
 .lead__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .lead__actions:empty { display: none; }
 
@@ -212,10 +238,10 @@ h1 {
   align-items: baseline;
   gap: var(--space-1) var(--space-3);
   padding-block-end: var(--space-4);
-  border-block-end: 1px solid var(--border);
+  border-block-end: 1px solid var(--arb-elevated);
 }
-.section-heading h2 { margin: 0; font-size: 1.125rem; }
-.section-heading p { margin: 0; font-size: 13px; }
+.section-heading h2 { margin: 0; font-size: 1.25rem; font-weight: 700; }
+.section-heading p { margin: 0; font-size: 14px; }
 /* Which preset is active, readable at a glance. Same tint as a pressed preset button. */
 .badge {
   display: inline-flex;
@@ -263,8 +289,10 @@ h1 {
 
 /* Step logs, in the style of GitHub Actions: one row per recipe step with a status icon,
    its name, how long it took, and a chevron. Open a row to read just that step's output. */
-.step-logs { display: grid; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.step-log + .step-log { border-block-start: 1px solid var(--border); }
+.step-logs { display: grid; border: 1px solid var(--arb-elevated); border-radius: 10px; overflow: hidden; }
+.step-log { border-inline-start: 4px solid transparent; }
+.step-log + .step-log { border-block-start: 1px solid var(--arb-elevated); }
+.step-log[data-step-state='failed'] { border-inline-start-color: var(--arb-error); background: var(--arb-error-bg); }
 .step-log > summary {
   display: flex;
   align-items: center;
@@ -293,7 +321,7 @@ h1 {
   transition: transform 160ms ease;
 }
 .step-log[open] > summary::after { margin-block-start: -3px; transform: rotate(45deg); }
-.step-log[open] > summary { border-block-end: 1px solid var(--border); }
+.step-log[open] > summary { border-block-end: 1px solid var(--arb-elevated); }
 .step-log__name { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; font-weight: 600; }
 .step-log__outcome { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .step-log--full > summary { color: var(--muted); }
@@ -326,23 +354,25 @@ h1 {
 }
 
 .env-fieldset {
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 0;
   margin: 0;
-  padding: var(--space-4);
+  padding: 0;
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .env-legend {
-  color: var(--muted);
-  font-size: 13px;
-  padding-inline: var(--space-2);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0;
+  margin-block-end: var(--space-1);
 }
 
 .env-input-label {
   display: block;
   font-size: 14px;
+  font-weight: 600;
 }
 
 .env-fieldset textarea {
@@ -352,7 +382,7 @@ h1 {
   resize: vertical;
   padding: var(--space-3);
   color: var(--text);
-  background: var(--bg-elevated);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   font-family: var(--font-mono);
@@ -377,7 +407,7 @@ h1 {
   block-size: var(--control-height);
   padding: 0 var(--space-3);
   color: var(--text);
-  background: var(--bg-elevated);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   font-family: var(--font-mono);
@@ -386,9 +416,40 @@ h1 {
 
 .env-row[data-secret] .env-row__value { border-style: dashed; }
 .env-row__stored { display: inline-flex; align-items: center; gap: var(--space-2); font-size: 13px; }
-.env-row__secret { display: inline-flex; align-items: center; gap: var(--space-1); font-size: 13px; white-space: nowrap; }
+.env-row__secret { display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: var(--space-6); font-size: 14px; white-space: nowrap; }
+/* A checkbox drawn from the palette, so every state is one we measured and none depends on the browser's own look
+   (a disabled native one ignores the palette and fades to about 1.5:1 on a light panel). Unchecked: the control
+   edge on the field colour. Checked: the action fill with its label colour for the tick. Disabled: the disabled
+   tokens, tick included, so a stored secret still reads as checked. */
+input[type='checkbox'] {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  inline-size: 18px;
+  block-size: 18px;
+  margin: 0;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+input[type='checkbox']:checked { background: var(--accent); border-color: var(--accent); }
+input[type='checkbox']:checked::after {
+  content: '';
+  inline-size: 4px;
+  block-size: 9px;
+  margin-block-start: -2px;
+  border-inline-end: 2px solid var(--on-accent);
+  border-block-end: 2px solid var(--on-accent);
+  transform: rotate(40deg);
+}
+input[type='checkbox']:disabled, input[type='checkbox']:disabled:checked { background: var(--arb-disabled-bg); border-color: var(--arb-disabled-border); }
+input[type='checkbox']:disabled:checked::after { border-color: var(--arb-disabled-fg); }
 .env-row-actions { display: flex; gap: var(--space-2); }
 .env-vault-note { color: var(--warning); }
+/* Instructions are body copy, so they take the primary text colour; muted stays for metadata and hints. */
+.muted.env-secret-help, .muted#environment-preset-help { color: var(--text); }
+.muted.env-vault-note { color: var(--text); border-inline-start: 3px solid var(--arb-warning); padding-inline-start: var(--space-3); }
 
 @media (max-width: 560px) {
   .env-row { grid-template-columns: 1fr 1fr; }
@@ -607,7 +668,7 @@ ol > li + li { margin-block-start: var(--space-2); }
   margin: 0;
   padding: var(--space-3);
   border-radius: 10px;
-  border: 1px solid var(--border);
+  border: 0;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-mono);
@@ -713,7 +774,7 @@ p:empty:not([role]):not([aria-live]) { display: none; }
 .card__id { overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text); }
 .card__text { display: grid; gap: var(--space-2); }
 .card h1 { font-size: 24px; line-height: 1.25; }
-.card__summary { color: var(--muted); line-height: 1.5; }
+.card__summary { color: var(--text); line-height: 1.5; }
 .card__actions { display: grid; gap: var(--space-3); }
 .card__actions:not(:has(*:not([hidden]))) { display: none; }
 .card__actions .button, .card__actions form, .card__start .button { inline-size: 100%; text-align: center; }
@@ -739,4 +800,6 @@ p:empty:not([role]):not([aria-live]) { display: none; }
   .step-log__status, .status-dot { forced-color-adjust: none; border-color: ButtonText; color: ButtonText; }
   .env-preset-button[aria-pressed='true'], .button--selected { border-width: 2px; }
   :focus-visible { outline-color: Highlight; }
+  .lead[data-state='error'], .lead[data-state='interrupted'], .setup-error, .step-log[data-step-state='failed'] { border-inline-start-color: ButtonText; }
+  .lead h2::before { forced-color-adjust: none; color: ButtonText; }
 }
